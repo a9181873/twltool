@@ -1,0 +1,11 @@
+.env
+.cache/
+.venv/
+venv/
+__pycache__/
+*.pyc
+reports/
+playwright-report/
+test-results/
+台壽官網功能測試報告.docx
+台灣人壽官網自動化功能測試：補充技術建議.md

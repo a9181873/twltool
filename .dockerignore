@@ -1,0 +1,12 @@
+.cache/
+.env
+.git/
+.venv/
+venv/
+__pycache__/
+*.pyc
+reports/
+playwright-report/
+test-results/
+台壽官網功能測試報告.docx
+

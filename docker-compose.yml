@@ -1,0 +1,66 @@
+services:
+  taiwanlife-monitor:
+    build:
+      context: .
+    image: ${MONITOR_IMAGE:-taiwanlife-monitor:local}
+    env_file:
+      - path: .env
+        required: false
+    working_dir: /app
+    environment:
+      TZ: ${TZ:-Asia/Taipei}
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./config/taiwanlife.json:/app/config/taiwanlife.json:ro
+      - ./reports:/app/reports
+    shm_size: ${MONITOR_SHM_SIZE:-1gb}
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - python
+      - -m
+      - taiwanlife_monitor.monitor
+      - --config
+      - config/taiwanlife.json
+      - --output-dir
+      - reports
+      - --email-on-fail
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "${N8N_BIND_ADDR:-127.0.0.1}:${N8N_HOST_PORT:-5678}:5678"
+    environment:
+      TZ: ${TZ:-Asia/Taipei}
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-Asia/Taipei}
+      N8N_HOST: ${N8N_HOST:-localhost}
+      N8N_PORT: 5678
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
+      WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://localhost:5678/}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-replace-with-32-byte-random-secret}
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      N8N_SECURE_COOKIE: ${N8N_SECURE_COOKIE:-false}
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: ${N8N_EXECUTIONS_DATA_MAX_AGE:-336}
+      NODES_EXCLUDE: ${N8N_NODES_EXCLUDE:-[]}
+      MONITOR_WORKDIR: ${MONITOR_WORKDIR:-/opt/taiwanlife-monitor}
+      MONITOR_PYTHON_BIN: ${MONITOR_PYTHON_BIN:-python}
+      MONITOR_CONFIG: ${MONITOR_CONFIG:-config/taiwanlife.json}
+      MONITOR_OUTPUT_DIR: ${MONITOR_OUTPUT_DIR:-reports}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n:/opt/n8n-workflows:ro
+      - ./reports:/opt/taiwanlife-reports:ro
+
+volumes:
+  n8n_data:

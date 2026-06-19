@@ -1,0 +1,198 @@
+{
+  "target_name": "台灣人壽官網",
+  "base_url": "https://www.taiwanlife.com/",
+  "allowed_hosts": [
+    "www.taiwanlife.com",
+    "taiwanlife.com",
+    "ezbao.taiwanlife.com",
+    "customer.taiwanlife.com",
+    "consultancyservice.taiwanlife.com",
+    "accessibility.taiwanlife.com"
+  ],
+  "ignore_url_keywords": [
+    "facebook.com",
+    "youtube.com",
+    "instagram.com",
+    "analytics.google.com",
+    "google.com/rmkt",
+    "googleadservices.com",
+    "stats.g.doubleclick.net",
+    "ad.doubleclick.net",
+    "d.line-scdn.net",
+    "google-analytics",
+    "googletagmanager",
+    "googletagmanager.com",
+    "doubleclick",
+    "line.me",
+    "play.google.com",
+    "apps.apple.com"
+  ],
+  "browser": {
+    "headless": true,
+    "timeout_ms": 45000,
+    "locale": "zh-TW",
+    "timezone_id": "Asia/Taipei",
+    "viewport": {
+      "width": 1920,
+      "height": 1080
+    },
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "extra_http_headers": {
+      "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.7,en;q=0.6"
+    }
+  },
+  "ssl": {
+    "enabled": true,
+    "port": 443,
+    "warn_days": 30,
+    "fail_days": 7
+  },
+  "pages": [
+    {
+      "id": "home",
+      "name": "首頁",
+      "path": "/",
+      "expected_title_contains": [
+        "台灣人壽"
+      ],
+      "required_texts": [
+        "商品資訊",
+        "保戶服務",
+        "投資資訊",
+        "網路投保",
+        "商品快搜",
+        "最新消息",
+        "服務據點"
+      ],
+      "full_page_screenshot": false
+    },
+    {
+      "id": "product-life",
+      "name": "壽險保障",
+      "path": "/product-personal-life-TermLife",
+      "expected_title_contains": [
+        "台灣人壽"
+      ],
+      "required_texts": [
+        "壽險保障",
+        "篩選條件",
+        "定期壽險"
+      ]
+    },
+    {
+      "id": "claim-online",
+      "name": "理賠申請",
+      "path": "/service-claim-online-e-claimsservice-claim-file-person",
+      "expected_title_contains": [
+        "台灣人壽"
+      ],
+      "required_texts": [
+        "理賠申請",
+        "線上申請",
+        "紙本申請"
+      ]
+    },
+    {
+      "id": "interest-rate",
+      "name": "宣告利率",
+      "path": "/investment-rate-interest-rate",
+      "expected_title_contains": [
+        "台灣人壽"
+      ],
+      "required_texts": [
+        "宣告利率",
+        "投資資訊"
+      ]
+    },
+    {
+      "id": "service-location",
+      "name": "服務據點",
+      "path": "/service-center-service-location",
+      "expected_title_contains": [
+        "台灣人壽"
+      ],
+      "required_texts": [
+        "服務據點",
+        "客戶協助"
+      ]
+    },
+    {
+      "id": "news",
+      "name": "新聞中心",
+      "path": "/news",
+      "expected_title_contains": [
+        "台灣人壽"
+      ],
+      "required_texts": [
+        "新聞中心"
+      ]
+    }
+  ],
+  "search_check": {
+    "enabled": true,
+    "query": "壽險",
+    "trigger_selectors": [
+      "a[hint*='搜尋']",
+      "button[hint*='搜尋']",
+      "[aria-label*='搜尋']",
+      "text=搜尋全站",
+      "text=搜尋"
+    ],
+    "input_selectors": [
+      "input[placeholder*='搜尋']",
+      "input[type='search']",
+      "input[type='text']",
+      "input:not([type])"
+    ],
+    "submit_selectors": [
+      "button:has-text('搜尋')",
+      "input[type='submit']",
+      "[aria-label*='搜尋']"
+    ],
+    "expected_any_text": [
+      "壽險",
+      "搜尋結果",
+      "商品項目",
+      "壽險保障"
+    ]
+  },
+  "link_crawl": {
+    "enabled": true,
+    "max_links": 120,
+    "request_timeout_ms": 25000,
+    "include_hosts": [
+      "www.taiwanlife.com"
+    ],
+    "seed_paths": [
+      "/",
+      "/product-personal-life-TermLife",
+      "/service-claim-online-e-claimsservice-claim-file-person",
+      "/news"
+    ],
+    "ignore_url_keywords": [
+      "#",
+      "javascript:",
+      "mailto:",
+      "tel:"
+    ]
+  },
+  "retention": {
+    "enabled": true,
+    "result_days": 90,
+    "screenshot_days": 30
+  },
+  "alerts": {
+    "email": {
+      "enabled": false,
+      "host_env": "SMTP_HOST",
+      "port_env": "SMTP_PORT",
+      "username_env": "SMTP_USER",
+      "password_env": "SMTP_PASSWORD",
+      "from_env": "ALERT_FROM",
+      "to_env": "ALERT_TO",
+      "starttls": true,
+      "timeout_seconds": 20,
+      "subject_prefix": "[台壽官網巡檢]"
+    }
+  }
+}

@@ -1,0 +1,2 @@
+# Regression tests use Python's standard-library unittest only.
+# Keep this file for future lightweight test tooling if needed.

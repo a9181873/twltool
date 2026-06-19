@@ -13,7 +13,7 @@ services:
     volumes:
       - ./config/taiwanlife.json:/app/config/taiwanlife.json:ro
       - ./reports:/app/reports
-    shm_size: ${MONITOR_SHM_SIZE:-1gb}
+    shm_size: ${MONITOR_SHM_SIZE:-2gb}
     tmpfs:
       - /tmp:size=512m,mode=1777
     cap_drop:

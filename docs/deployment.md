@@ -28,6 +28,12 @@ docker compose build taiwanlife-monitor
 docker compose run --rm taiwanlife-monitor
 ```
 
+健康檢查：
+
+```bash
+docker compose run --rm taiwanlife-monitor python -m taiwanlife_monitor.monitor --health-check
+```
+
 成功時 stdout 最後會出現類似：
 
 ```json

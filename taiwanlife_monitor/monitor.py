@@ -27,6 +27,7 @@ from urllib.parse import parse_qsl, urlencode, urldefrag, urljoin, urlparse, url
 
 
 TAIPEI_TZ = timezone(timedelta(hours=8), "Asia/Taipei")
+VERSION = "0.2.0"
 RESOURCE_TYPES = {"document", "script", "stylesheet", "image", "font", "xhr", "fetch"}
 MAX_DETAIL_CHARS = 500
 MAX_ERROR_CHARS = 320
@@ -137,6 +138,18 @@ def split_emails(value: str | list[str]) -> list[str]:
 def ignored(url: str, patterns: list[str]) -> bool:
     lowered = url.lower()
     return any(pattern.lower() in lowered for pattern in patterns)
+
+
+def unique_items(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        item = str(value or "").strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        result.append(item)
+    return result
 
 
 def normalize_url(base_url: str, href: str) -> str | None:
@@ -374,6 +387,27 @@ class TaiwanLifeMonitor:
     def timeout_ms(self) -> int:
         return int(self.config.get("browser", {}).get("timeout_ms", 45000))
 
+    def retry_call(self, operation: str, fn: Any) -> Any:
+        retry_cfg = self.config.get("retry", {})
+        if not retry_cfg.get("enabled", True):
+            return fn()
+        max_attempts = max(1, int(retry_cfg.get("max_attempts", 3)))
+        base_delay = max(0.0, float(retry_cfg.get("base_delay_seconds", 1.5)))
+        max_delay = max(base_delay, float(retry_cfg.get("max_delay_seconds", 8.0)))
+        last_exc: BaseException | None = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return fn()
+            except Exception as exc:
+                last_exc = exc
+                if attempt >= max_attempts:
+                    raise
+                delay = min(base_delay * (2 ** (attempt - 1)), max_delay)
+                time.sleep(delay)
+        if last_exc:
+            raise last_exc
+        raise RuntimeError(f"{operation} retry failed without exception")
+
     def add_check(
         self,
         check_id: str,
@@ -495,46 +529,54 @@ class TaiwanLifeMonitor:
         page.on("pageerror", on_page_error)
         return local_resources
 
+    def ssl_hosts(self) -> list[str]:
+        ssl_cfg = self.config.get("ssl", {})
+        configured = ssl_cfg.get("hosts")
+        if configured:
+            return unique_items(configured)
+        base_host = urlparse(self.base_url).hostname or ""
+        return unique_items([base_host])
+
     def run_ssl_check(self) -> None:
         ssl_cfg = self.config.get("ssl", {})
         if not ssl_cfg.get("enabled", True):
             return
-        start = time.monotonic()
-        host = urlparse(self.base_url).hostname or ""
         port = int(ssl_cfg.get("port", 443))
         warn_days = int(ssl_cfg.get("warn_days", 30))
         fail_days = int(ssl_cfg.get("fail_days", 7))
-        try:
-            context = ssl.create_default_context()
-            with socket.create_connection((host, port), timeout=10) as sock:
-                with context.wrap_socket(sock, server_hostname=host) as ssock:
-                    cert = ssock.getpeercert()
-            expires = datetime.strptime(cert["notAfter"], "%b %d %H:%M:%S %Y %Z").replace(
-                tzinfo=timezone.utc
-            )
-            days_left = (expires - datetime.now(timezone.utc)).days
-            status = "pass"
-            if days_left < fail_days:
-                status = "fail"
-            elif days_left < warn_days:
-                status = "warn"
-            self.add_check(
-                "ssl",
-                "TLS 憑證有效期",
-                status,
-                f"{host} 憑證剩餘 {days_left} 天，到期日 {expires.astimezone(TAIPEI_TZ).isoformat()}",
-                start,
-                {"host": host, "days_left": days_left},
-            )
-        except Exception as exc:
-            self.add_check(
-                "ssl",
-                "TLS 憑證有效期",
-                "fail",
-                exception_detail("TLS 憑證檢查", exc),
-                start,
-                {"host": host, "port": port, **exception_evidence(exc)},
-            )
+        for host in self.ssl_hosts():
+            start = time.monotonic()
+            try:
+                context = ssl.create_default_context()
+                with socket.create_connection((host, port), timeout=10) as sock:
+                    with context.wrap_socket(sock, server_hostname=host) as ssock:
+                        cert = ssock.getpeercert()
+                expires = datetime.strptime(cert["notAfter"], "%b %d %H:%M:%S %Y %Z").replace(
+                    tzinfo=timezone.utc
+                )
+                days_left = (expires - datetime.now(timezone.utc)).days
+                status = "pass"
+                if days_left < fail_days:
+                    status = "fail"
+                elif days_left < warn_days:
+                    status = "warn"
+                self.add_check(
+                    f"ssl-{safe_slug(host)}",
+                    f"TLS 憑證有效期：{host}",
+                    status,
+                    f"{host} 憑證剩餘 {days_left} 天，到期日 {expires.astimezone(TAIPEI_TZ).isoformat()}",
+                    start,
+                    {"host": host, "days_left": days_left},
+                )
+            except Exception as exc:
+                self.add_check(
+                    f"ssl-{safe_slug(host)}",
+                    f"TLS 憑證有效期：{host}",
+                    "fail",
+                    exception_detail("TLS 憑證檢查", exc),
+                    start,
+                    {"host": host, "port": port, **exception_evidence(exc)},
+                )
 
     def run_page_check(self, context: Any, page_cfg: dict[str, Any]) -> None:
         start = time.monotonic()
@@ -547,7 +589,10 @@ class TaiwanLifeMonitor:
             page = context.new_page()
             page.set_default_timeout(self.timeout_ms)
             local_resources = self.attach_page_listeners(page, name)
-            response = page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)
+            response = self.retry_call(
+                f"頁面載入：{name}",
+                lambda: page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms),
+            )
             try:
                 page.wait_for_load_state("networkidle", timeout=int(page_cfg.get("networkidle_ms", 15000)))
             except Exception:
@@ -633,7 +678,10 @@ class TaiwanLifeMonitor:
             page = context.new_page()
             page.set_default_timeout(self.timeout_ms)
             local_resources = self.attach_page_listeners(page, "站內搜尋")
-            page.goto(self.base_url, wait_until="domcontentloaded", timeout=self.timeout_ms)
+            self.retry_call(
+                "搜尋頁載入",
+                lambda: page.goto(self.base_url, wait_until="domcontentloaded", timeout=self.timeout_ms),
+            )
             try:
                 page.wait_for_load_state("networkidle", timeout=15000)
             except Exception:
@@ -662,13 +710,13 @@ class TaiwanLifeMonitor:
                 return
 
             before_url = page.url
-            input_box.fill(query)
+            self.retry_call("搜尋輸入", lambda: input_box.fill(query))
             try:
-                input_box.press("Enter")
+                self.retry_call("搜尋送出", lambda: input_box.press("Enter"))
             except Exception:
                 button = self.find_first_visible(page, search_cfg.get("submit_selectors", []), 2000)
                 if button:
-                    button.click(timeout=5000)
+                    self.retry_call("搜尋按鈕點擊", lambda: button.click(timeout=5000))
             try:
                 page.wait_for_load_state("networkidle", timeout=15000)
             except Exception:
@@ -713,7 +761,7 @@ class TaiwanLifeMonitor:
     def collect_links(self, context: Any) -> tuple[list[str], list[dict[str, Any]]]:
         crawl_cfg = self.config.get("link_crawl", {})
         start_pages = crawl_cfg.get("seed_paths") or [page.get("path", "/") for page in self.config.get("pages", [])]
-        include_hosts = set(crawl_cfg.get("include_hosts", []))
+        include_hosts = set(crawl_cfg.get("include_hosts") or self.config.get("allowed_hosts", []))
         ignore_patterns = self.config.get("ignore_url_keywords", []) + crawl_cfg.get("ignore_url_keywords", [])
         links: set[str] = set()
         seed_errors: list[dict[str, Any]] = []
@@ -723,7 +771,10 @@ class TaiwanLifeMonitor:
             try:
                 page = context.new_page()
                 page.set_default_timeout(self.timeout_ms)
-                page.goto(seed_url, wait_until="domcontentloaded", timeout=self.timeout_ms)
+                self.retry_call(
+                    f"連結種子頁載入：{seed_url}",
+                    lambda: page.goto(seed_url, wait_until="domcontentloaded", timeout=self.timeout_ms),
+                )
                 raw_links = page.locator("a[href]").evaluate_all("els => els.map(a => a.href)")
                 for raw in raw_links:
                     url = normalize_url(self.base_url, raw)
@@ -755,7 +806,10 @@ class TaiwanLifeMonitor:
             evidence["seed_error_count"] = len(seed_errors)
         for url in links:
             try:
-                response = context.request.get(url, timeout=timeout, max_redirects=5)
+                response = self.retry_call(
+                    f"連結檢查：{url}",
+                    lambda: context.request.get(url, timeout=timeout, max_redirects=5),
+                )
                 if has_bad_status(response.status):
                     item = {"url": sanitize_url(url), "status": response.status}
                     self.broken_links.append(item)
@@ -1071,6 +1125,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="台灣人壽官網自動巡檢工具")
     parser.add_argument("--config", default="config/taiwanlife.json", help="監控設定 JSON")
     parser.add_argument("--output-dir", default="reports", help="報表輸出資料夾")
+    parser.add_argument("--health-check", action="store_true", help="只輸出工具健康狀態，不執行巡檢")
     parser.add_argument("--email-on-fail", action="store_true", help="異常時透過 SMTP 寄送警示")
     parser.add_argument("--always-email", action="store_true", help="不論成功或失敗都寄送 Email")
     parser.add_argument("--fail-exit-code", action="store_true", help="發現 fail 時以 exit code 2 結束")
@@ -1079,6 +1134,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
+    if args.health_check:
+        payload = {
+            "status": "ok",
+            "version": VERSION,
+            "timestamp": taipei_now().isoformat(),
+            "python": sys.version.split()[0],
+        }
+        print(json.dumps(payload, ensure_ascii=False))
+        return 0
     try:
         config_path = Path(args.config)
         config = load_json(config_path)

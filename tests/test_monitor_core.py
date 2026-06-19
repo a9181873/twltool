@@ -10,13 +10,16 @@ from taiwanlife_monitor.monitor import (
     CheckResult,
     TAIPEI_TZ,
     TaiwanLifeMonitor,
+    VERSION,
     env_or_value,
     has_bad_status,
     load_json,
+    main,
     normalize_url,
     safe_slug,
     send_email_alert,
     split_emails,
+    unique_items,
     worst_status,
     write_json,
 )
@@ -106,6 +109,7 @@ class HelperFunctionTests(unittest.TestCase):
         self.assertTrue(has_bad_status(500))
         self.assertFalse(has_bad_status(399))
         self.assertEqual(worst_status("pass", "warn", "fail"), "fail")
+        self.assertEqual(unique_items(["a", "b", "a", "", "b"]), ["a", "b"])
         self.assertEqual(split_emails("a@example.com; b@example.com, c@example.com"), [
             "a@example.com",
             "b@example.com",
@@ -145,6 +149,50 @@ class ConfigLoadingTests(unittest.TestCase):
             self.assertEqual(monitor.timeout_ms, 45000)
             self.assertTrue((Path(tmp) / "results").is_dir())
             self.assertTrue((Path(tmp) / "screenshots").is_dir())
+            self.assertEqual(
+                monitor.ssl_hosts(),
+                [
+                    "www.taiwanlife.com",
+                    "ezbao.taiwanlife.com",
+                    "customer.taiwanlife.com",
+                    "consultancyservice.taiwanlife.com",
+                    "accessibility.taiwanlife.com",
+                ],
+            )
+
+    def test_ssl_hosts_falls_back_to_base_url(self):
+        tmp, monitor = make_monitor({"ssl": {"enabled": True}})
+        self.addCleanup(tmp.cleanup)
+
+        self.assertEqual(monitor.ssl_hosts(), ["example.com"])
+
+
+class RetryAndHealthTests(unittest.TestCase):
+    def test_retry_call_retries_then_succeeds(self):
+        tmp, monitor = make_monitor(
+            {"retry": {"enabled": True, "max_attempts": 3, "base_delay_seconds": 0, "max_delay_seconds": 0}}
+        )
+        self.addCleanup(tmp.cleanup)
+        attempts = {"count": 0}
+
+        def flaky():
+            attempts["count"] += 1
+            if attempts["count"] < 3:
+                raise TimeoutError("temporary")
+            return "ok"
+
+        self.assertEqual(monitor.retry_call("flaky", flaky), "ok")
+        self.assertEqual(attempts["count"], 3)
+
+    def test_health_check_outputs_json_without_config(self):
+        with patch("builtins.print") as printer:
+            exit_code = main(["--health-check"])
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(printer.call_args.args[0])
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["version"], VERSION)
+        self.assertIn("python", payload)
 
 
 class ListenerRegressionTests(unittest.TestCase):

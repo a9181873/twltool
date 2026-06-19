@@ -3,7 +3,6 @@
   "base_url": "https://www.taiwanlife.com/",
   "allowed_hosts": [
     "www.taiwanlife.com",
-    "taiwanlife.com",
     "ezbao.taiwanlife.com",
     "customer.taiwanlife.com",
     "consultancyservice.taiwanlife.com",
@@ -45,7 +44,20 @@
     "enabled": true,
     "port": 443,
     "warn_days": 30,
-    "fail_days": 7
+    "fail_days": 7,
+    "hosts": [
+      "www.taiwanlife.com",
+      "ezbao.taiwanlife.com",
+      "customer.taiwanlife.com",
+      "consultancyservice.taiwanlife.com",
+      "accessibility.taiwanlife.com"
+    ]
+  },
+  "retry": {
+    "enabled": true,
+    "max_attempts": 3,
+    "base_delay_seconds": 1.5,
+    "max_delay_seconds": 8.0
   },
   "pages": [
     {
@@ -132,9 +144,12 @@
     "enabled": true,
     "query": "壽險",
     "trigger_selectors": [
+      "[data-testid='search-trigger']",
+      "[aria-label*='搜尋']",
+      "button[aria-expanded='false'][aria-haspopup='dialog']",
+      "a[href*='search']",
       "a[hint*='搜尋']",
       "button[hint*='搜尋']",
-      "[aria-label*='搜尋']",
       "text=搜尋全站",
       "text=搜尋"
     ],
@@ -161,7 +176,11 @@
     "max_links": 120,
     "request_timeout_ms": 25000,
     "include_hosts": [
-      "www.taiwanlife.com"
+      "www.taiwanlife.com",
+      "ezbao.taiwanlife.com",
+      "customer.taiwanlife.com",
+      "consultancyservice.taiwanlife.com",
+      "accessibility.taiwanlife.com"
     ],
     "seed_paths": [
       "/",
@@ -179,7 +198,7 @@
   "retention": {
     "enabled": true,
     "result_days": 90,
-    "screenshot_days": 30
+    "screenshot_days": 90
   },
   "alerts": {
     "email": {

@@ -73,7 +73,7 @@ docker compose up -d n8n
 - 最新 Markdown：`reports/latest.md`
 - 歷史報表：`reports/results/`
 - 截圖：`reports/screenshots/`
-- 預設保留期限：報表 90 天、截圖 30 天，可在 `config/taiwanlife.json` 的 `retention` 調整。
+- 預設保留期限：報表 90 天、截圖 90 天，可在 `config/taiwanlife.json` 的 `retention` 調整。
 
 ## 架構與上線文件
 

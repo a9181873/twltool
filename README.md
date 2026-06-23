@@ -121,6 +121,60 @@ docker compose up -d n8n
 - 截圖：`reports/screenshots/`
 - 預設保留期限：報表 90 天、截圖 90 天，可在 `config/taiwanlife.json` 的 `retention` 調整。
 
+## 截圖邏輯
+
+完整巡檢通常會產生 7 張截圖：6 個指定頁面各 1 張，加上站內搜尋結果 1 張。這 7 張是「固定巡檢畫面存證」，不是只在錯誤時才截。
+
+檔名規則：
+
+```text
+reports/screenshots/<run_id>_<page_id>.png
+```
+
+範例：
+
+- `20260623_233646_home.png`
+- `20260623_233646_product-life.png`
+- `20260623_233646_claim-online.png`
+- `20260623_233646_interest-rate.png`
+- `20260623_233646_service-location.png`
+- `20260623_233646_news.png`
+- `20260623_233646_search.png`
+
+固定頁面截圖時間點：
+
+1. 開啟頁面，等待 DOM 載入完成。
+2. 嘗試等待網路閒置，預設最多 15 秒；等不到也會繼續。
+3. 讀取頁面標題與文字。
+4. 檢查標題、必要文字、HTTP 狀態、壞圖、壞 JS、壞 CSS、XHR/Fetch 失敗。
+5. 截取目前瀏覽器視窗畫面。
+6. 將截圖路徑寫入 JSON/Markdown 報表。
+
+站內搜尋截圖時間點：
+
+1. 開啟首頁。
+2. 找到搜尋框。
+3. 輸入預設關鍵字 `壽險` 並送出。
+4. 等待搜尋結果或頁面回應。
+5. 檢查搜尋後的網址、標題與預期文字。
+6. 截取搜尋後目前瀏覽器視窗畫面。
+7. 將截圖路徑寫入 JSON/Markdown 報表。
+
+目前截圖是「目前視窗範圍」，不是整頁長截圖。`config/taiwanlife.json` 可用 `full_page_screenshot` 控制是否整頁截圖；目前設定皆等同 `false`。
+
+異常證據目前怎麼留：
+
+| 項目 | 目前證據 | 截圖狀態 | 下一步建議 |
+|---|---|---|---|
+| TLS 憑證檢查 | `host`、剩餘天數、到期門檻、錯誤訊息 | 不截圖，因為這不是網頁畫面問題 | 保留 JSON 證據即可 |
+| 內部連結抽查 | 異常 URL、HTTP status、錯誤類型 | 目前不截目的頁，因為程式用 HTTP request 抽查，沒有開瀏覽器頁面 | 異常時補截前幾個壞連結的目的頁畫面 |
+| console error | 來源頁面、console 錯誤文字 | 來源頁面已有固定截圖，但未針對 console error 另截一張 | 將 console error 明細綁到該頁 evidence |
+| 壞圖、壞 JS、壞 CSS、XHR/Fetch 失敗 | 來源頁面、資源 URL、status、資源類型 | 來源頁面已有固定截圖，單一資源本身不一定有畫面 | 異常時在報表加強標示來源頁截圖 |
+
+也就是說，錯誤一定要有證據；目前證據分成「畫面截圖」與「結構化錯誤資料」。最需要補強的是內部連結異常時的目的頁截圖，以及 console error 與來源截圖的對應關係。
+
+截圖失敗時不會中斷整次巡檢，會記錄 `screenshot_error`，該檢查至少標記為 `warn`。
+
 ## Watchdog 漏跑與異常檢查
 
 `scripts/taiwanlife_watchdog.sh` 會讀取 `reports/latest.json`，檢查最新巡檢是否過舊、是否有 fail/warn、截圖數是否不足。適合放在 Hermes cron、Windows wrapper 或 Power Automate 前置檢查。

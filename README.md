@@ -81,10 +81,25 @@ docker compose up -d n8n
 - 部署說明：`docs/deployment.md`
 - 第一版上線檢查清單：`docs/go-live-checklist.md`
 
+## 截圖自動上傳 Google Drive
+
+巡檢產生截圖後，`scripts/upload_to_drive.py` 會自動將新截圖上傳到 Google Drive 的「台壽巡檢截圖」資料夾。
+
+```
+python3 scripts/upload_to_drive.py
+```
+
+機制：
+- 使用既有 `google_token.json` OAuth 權杖（需含 `drive.file` scope）
+- 自動刷新過期 token
+- 依檔名去重，已上傳的略過
+- 支援續傳（resumable upload）
+
 ## 建議排程
 
 正式環境建議：
 
 - 每 12 小時執行一次完整巡檢。
+- 巡檢完成後自動上傳截圖到 Google Drive。
 - Email 僅在 `fail` 或 `warn` 發生時寄送。
 - 若未來要提高頻率，先和 WAF/SOC 團隊確認來源 IP、User-Agent 與流量上限。

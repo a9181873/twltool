@@ -547,11 +547,24 @@ class TaiwanLifeMonitor:
         for host in self.ssl_hosts():
             start = time.monotonic()
             try:
-                context = ssl.create_default_context()
-                with socket.create_connection((host, port), timeout=10) as sock:
-                    with context.wrap_socket(sock, server_hostname=host) as ssock:
-                        cert = ssock.getpeercert()
-                expires = datetime.strptime(cert["notAfter"], "%b %d %H:%M:%S %Y %Z").replace(
+                # ARM64 OpenSSL 環境在 CERT_REQUIRED 模式下可能遇到 SKI 驗證問題。
+                # 改用 ssl.get_server_certificate() 取得 PEM 後用 openssl 解析。
+                import subprocess, tempfile
+                pem = ssl.get_server_certificate((host, port), timeout=10)
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".pem", delete=False) as tf:
+                    tf.write(pem)
+                    tf.flush()
+                    result = subprocess.run(
+                        ["openssl", "x509", "-noout", "-enddate", "-in", tf.name],
+                        capture_output=True, text=True, timeout=10
+                    )
+                import os as _os; _os.unlink(tf.name)
+                # 輸出格式：notAfter=Jun 15 12:00:00 2026 GMT
+                import re as _re
+                m = _re.search(r"notAfter=(.+)", result.stdout)
+                if not m:
+                    raise ValueError(f"openssl parse failed: {result.stdout[:200]}")
+                expires = datetime.strptime(m.group(1).strip(), "%b %d %H:%M:%S %Y %Z").replace(
                     tzinfo=timezone.utc
                 )
                 days_left = (expires - datetime.now(timezone.utc)).days
@@ -859,9 +872,9 @@ class TaiwanLifeMonitor:
                 browser = None
                 context = None
                 try:
-                    browser = playwright.chromium.launch(
-                        headless=bool(browser_cfg.get("headless", True)),
-                        args=browser_cfg.get(
+                    launch_kwargs: dict[str, Any] = {
+                        "headless": bool(browser_cfg.get("headless", True)),
+                        "args": browser_cfg.get(
                             "args",
                             [
                                 "--no-sandbox",
@@ -870,7 +883,13 @@ class TaiwanLifeMonitor:
                                 "--disable-gpu",
                             ],
                         ),
-                    )
+                    }
+                    executable_path = os.environ.get(
+                        "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", ""
+                    ) or browser_cfg.get("executable_path", "")
+                    if executable_path:
+                        launch_kwargs["executable_path"] = executable_path
+                    browser = playwright.chromium.launch(**launch_kwargs)
                 except Exception as exc:
                     self.add_check(
                         "browser-launch",

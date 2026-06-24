@@ -18,6 +18,8 @@ import socket
 import ssl
 import sys
 import time
+import types
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
@@ -389,6 +391,10 @@ def exception_detail(operation: str, exc: BaseException) -> str:
     return compact_text(detail)
 
 
+class GlobalTimeoutError(TimeoutError):
+    """Raised when the monitor reaches its configured global deadline."""
+
+
 class TaiwanLifeMonitor:
     def __init__(self, config: dict[str, Any], output_dir: Path) -> None:
         self.config = config
@@ -472,6 +478,37 @@ class TaiwanLifeMonitor:
                 exception_detail(f"{name}關閉", exc),
                 start,
                 exception_evidence(exc),
+            )
+
+    @contextmanager
+    def safe_check(self, check_id: str, name: str, evidence: dict[str, Any] | None = None):
+        """Context manager that wraps a check in try/except and records the result.
+
+        On success the caller is responsible for calling ``self.add_check``.
+        On unhandled exception, this context manager records a *fail* check
+        automatically so the caller's outer ``try`` blocks can be simplified.
+
+        Usage::
+
+            with self.safe_check("my-check", "我的檢查", evidence) as ctx:
+                # ... do work ...
+                self.add_check("my-check", "我的檢查", "pass", "ok", ctx.start, evidence)
+        """
+        ctx_evidence = evidence if evidence is not None else {}
+        ctx = types.SimpleNamespace(start=time.monotonic())
+        try:
+            yield ctx
+        except GlobalTimeoutError:
+            raise
+        except Exception as exc:
+            ctx_evidence.update(exception_evidence(exc))
+            self.add_check(
+                check_id,
+                name,
+                "fail",
+                exception_detail(name, exc),
+                ctx.start,
+                ctx_evidence,
             )
 
     def capture_screenshot(
@@ -560,14 +597,27 @@ class TaiwanLifeMonitor:
         return local_resources
 
     def ssl_hosts(self) -> list[str]:
+        """Return the list of hosts whose TLS certificates should be checked.
+
+        Falls back to ``config["allowed_hosts"]`` when ``ssl.hosts`` is not
+        explicitly configured, then to the base URL hostname as last resort.
+        """
         ssl_cfg = self.config.get("ssl", {})
         configured = ssl_cfg.get("hosts")
         if configured:
             return unique_items(configured)
+        allowed = self.config.get("allowed_hosts")
+        if allowed:
+            return unique_items(allowed)
         base_host = urlparse(self.base_url).hostname or ""
         return unique_items([base_host])
 
     def run_ssl_check(self) -> None:
+        """執行 TLS/SSL 憑證到期日檢查。
+
+        使用 openssl 指令解析憑證，若剩餘天數低於 fail_days 則標記為 fail，
+        低於 warn_days 則標記為 warn。檢查結果會加入 self.checks。
+        """
         ssl_cfg = self.config.get("ssl", {})
         if not ssl_cfg.get("enabled", True):
             return
@@ -622,6 +672,11 @@ class TaiwanLifeMonitor:
                 )
 
     def run_page_check(self, context: Any, page_cfg: dict[str, Any]) -> None:
+        """執行單一指定頁面的巡檢。
+
+        開啟頁面並等待 domcontentloaded，檢查 HTTP 狀態碼、標題、必要文字，
+        並擷取頁面截圖。過程中的壞圖、壞 JS、XHR 失敗也會一併被記錄。
+        """
         start = time.monotonic()
         name = page_cfg["name"]
         url = urljoin(self.base_url, page_cfg.get("path", "/"))
@@ -858,6 +913,10 @@ class TaiwanLifeMonitor:
             self.close_quietly(page, f"rpa84-{scenario_id}")
 
     def run_rpa84_scenarios(self, context: Any) -> None:
+        """執行所有設定為啟用的 RPA84 自動化場景。
+
+        從設定檔讀取場景清單，針對 enabled=True 的場景逐一執行模擬操作。
+        """
         rpa_cfg = self.config.get("rpa84", {})
         if not rpa_cfg.get("enabled", False):
             return
@@ -888,6 +947,11 @@ class TaiwanLifeMonitor:
             self.run_rpa84_scenario(context, scenario)
 
     def run_search_check(self, context: Any) -> None:
+        """執行站內搜尋功能檢查。
+
+        開啟首頁，尋找搜尋按鈕或輸入框，輸入關鍵字後送出，
+        並驗證搜尋結果頁面是否有出現預期的文字（如「搜尋結果」）。
+        """
         search_cfg = self.config.get("search_check", {})
         if not search_cfg.get("enabled", True):
             return
@@ -1014,6 +1078,11 @@ class TaiwanLifeMonitor:
         return sorted(links), seed_errors
 
     def run_link_crawl(self, context: Any) -> None:
+        """執行內部連結抽查。
+
+        從指定的種子頁面（seed_paths）收集站內連結，並最多抽查 max_links 個連結，
+        透過 HTTP GET 確認是否有 404 或 500 等錯誤狀態碼。
+        """
         crawl_cfg = self.config.get("link_crawl", {})
         if not crawl_cfg.get("enabled", True):
             return
@@ -1061,8 +1130,19 @@ class TaiwanLifeMonitor:
         else:
             self.add_check("link-crawl", "內部連結可用性", "pass", f"抽查 {len(links)} 個內部連結皆可用", start, evidence)
 
-    def run_browser_checks(self) -> None:
+    def raise_if_global_timeout(self, deadline: float | None) -> None:
+        if deadline is not None and time.monotonic() >= deadline:
+            raise GlobalTimeoutError("巡檢整體執行超時")
+
+    def run_browser_checks(self, deadline: float | None = None) -> None:
+        """初始化 Playwright 並執行所有需要瀏覽器的巡檢項目。
+
+        包含：頁面巡檢、站內搜尋檢查、RPA84 場景流程、內部連結抽查。
+        統一管理 Browser 與 Context 的生命週期。若提供 deadline，會在各檢查
+        項目之間停止後續工作；已進行中的瀏覽器操作仍交由 Playwright timeout 控制。
+        """
         start = time.monotonic()
+        self.raise_if_global_timeout(deadline)
         try:
             from playwright.sync_api import sync_playwright
         except ImportError:
@@ -1081,6 +1161,7 @@ class TaiwanLifeMonitor:
                 browser = None
                 context = None
                 try:
+                    self.raise_if_global_timeout(deadline)
                     launch_kwargs: dict[str, Any] = {
                         "headless": bool(browser_cfg.get("headless", True)),
                         "args": browser_cfg.get(
@@ -1111,6 +1192,7 @@ class TaiwanLifeMonitor:
                     return
 
                 try:
+                    self.raise_if_global_timeout(deadline)
                     context = browser.new_context(
                         viewport=browser_cfg.get("viewport", {"width": 1920, "height": 1080}),
                         locale=browser_cfg.get("locale", "zh-TW"),
@@ -1133,50 +1215,22 @@ class TaiwanLifeMonitor:
 
                 try:
                     for page_cfg in self.config.get("pages", []):
-                        try:
+                        self.raise_if_global_timeout(deadline)
+                        page_id = page_cfg.get("id", safe_slug(page_cfg.get("name", "page")))
+                        page_name = f"頁面巡檢：{page_cfg.get('name', page_cfg.get('path', '未命名頁面'))}"
+                        page_evidence = {"url": urljoin(self.base_url, page_cfg.get("path", "/"))}
+                        with self.safe_check(page_id, page_name, page_evidence):
+                            self.raise_if_global_timeout(deadline)
                             self.run_page_check(context, page_cfg)
-                        except Exception as exc:
-                            self.add_check(
-                                page_cfg.get("id", safe_slug(page_cfg.get("name", "page"))),
-                                f"頁面巡檢：{page_cfg.get('name', page_cfg.get('path', '未命名頁面'))}",
-                                "fail",
-                                exception_detail("頁面巡檢", exc),
-                                start,
-                                {"url": urljoin(self.base_url, page_cfg.get("path", "/")), **exception_evidence(exc)},
-                            )
-                    try:
+                    self.raise_if_global_timeout(deadline)
+                    with self.safe_check("search", "站內搜尋功能"):
                         self.run_search_check(context)
-                    except Exception as exc:
-                        self.add_check(
-                            "search",
-                            "站內搜尋功能",
-                            "fail",
-                            exception_detail("站內搜尋功能", exc),
-                            start,
-                            exception_evidence(exc),
-                        )
-                    try:
+                    self.raise_if_global_timeout(deadline)
+                    with self.safe_check("rpa84", "RPA84 功能流程"):
                         self.run_rpa84_scenarios(context)
-                    except Exception as exc:
-                        self.add_check(
-                            "rpa84",
-                            "RPA84 功能流程",
-                            "fail",
-                            exception_detail("RPA84 功能流程", exc),
-                            start,
-                            exception_evidence(exc),
-                        )
-                    try:
+                    self.raise_if_global_timeout(deadline)
+                    with self.safe_check("link-crawl", "內部連結可用性"):
                         self.run_link_crawl(context)
-                    except Exception as exc:
-                        self.add_check(
-                            "link-crawl",
-                            "內部連結可用性",
-                            "fail",
-                            exception_detail("內部連結可用性", exc),
-                            start,
-                            exception_evidence(exc),
-                        )
                 finally:
                     self.close_quietly(context, "browser-context")
                     self.close_quietly(browser, "browser")
@@ -1294,11 +1348,35 @@ class TaiwanLifeMonitor:
             )
 
     def run(self) -> tuple[dict[str, Any], Path, Path]:
+        """Run all checks with a phase-boundary global timeout.
+
+        ``config["global_timeout_seconds"]`` defaults to 1800 (30 minutes).
+        The deadline is checked before and after major phases and between
+        browser checks. It does not forcibly interrupt an active Playwright
+        call; those calls remain bounded by the normal browser timeout.
+        """
         started_at = taipei_now()
         start = time.monotonic()
-        self.run_ssl_check()
-        self.run_browser_checks()
-        self.cleanup_old_outputs()
+        timeout_seconds = float(self.config.get("global_timeout_seconds", 1800))
+        deadline = start + timeout_seconds if timeout_seconds > 0 else None
+
+        try:
+            self.raise_if_global_timeout(deadline)
+            self.run_ssl_check()
+            self.raise_if_global_timeout(deadline)
+            self.run_browser_checks(deadline=deadline)
+            self.raise_if_global_timeout(deadline)
+            self.cleanup_old_outputs()
+        except GlobalTimeoutError:
+            timeout_start = time.monotonic()
+            self.add_check(
+                "global-timeout",
+                "整體執行超時",
+                "fail",
+                f"巡檢超過 {timeout_seconds:g} 秒上限，已提前中止並輸出已完成項目",
+                timeout_start,
+                {"timeout_seconds": timeout_seconds, "elapsed": round(time.monotonic() - start, 2)},
+            )
         report = self.build_report(started_at, time.monotonic() - start)
         json_path = self.results_dir / f"{self.run_id}.json"
         md_path = self.results_dir / f"{self.run_id}.md"

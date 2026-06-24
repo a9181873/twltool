@@ -1,2 +1,14 @@
 # Regression tests use Python's standard-library unittest only.
-# Keep this file for future lightweight test tooling if needed.
+# These tools improve code quality during development.
+
+# --- Linting & Formatting ---
+ruff>=0.4.0                # Fast Python linter and formatter (replaces flake8, isort, black)
+
+# --- Type Checking ---
+mypy>=1.10.0               # Static type checking
+
+# --- Test Coverage ---
+coverage>=7.0              # Measure test coverage
+
+# --- Pre-commit Hooks ---
+pre-commit>=3.0            # Git hook framework for automated checks

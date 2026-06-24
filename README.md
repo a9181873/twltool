@@ -18,6 +18,8 @@
 - `pages` 固定放必看頁面，確保首頁、商品、理賠、投資、據點、新聞等關鍵頁一定被檢查。
 - `link_crawl` 從種子頁動態抓站內連結，預設最多抽查 120 條，官網新增連結也有機會被巡到。
 - RPA84 是業務流程檢查，會用 `rpa84.scenarios` 描述「要怎麼點、怎麼填、怎麼判斷成功」。
+- `allowed_hosts` 是共用主機清單；未設定 `ssl.hosts` 或 `link_crawl.include_hosts` 時會自動沿用它。
+- `global_timeout_seconds` 預設 1800 秒；會在主要階段與各 browser check 之間停止後續工作，已進行中的 Playwright 操作仍由 browser timeout 控制。
 
 ## 技術與用途
 
@@ -68,6 +70,14 @@ python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt
 ./venv/bin/playwright install chromium
 ```
+
+開發品質工具為選用：
+
+```bash
+./venv/bin/pip install -r dev-requirements.txt
+```
+
+基本回歸測試仍只依賴 Python 標準函式庫 `unittest`。
 
 執行：
 
@@ -296,4 +306,4 @@ Windows 可用 PowerShell 版：
 
 - 站內搜尋：查詢 `壽險`，預期看到 `壽險`、`搜尋結果`、`商品項目` 或 `壽險保障`。
 - 內部連結抽查：從 `/`、`/product-personal-life-TermLife`、`/service-claim-online-e-claimsservice-claim-file-person`、`/news` 收集連結，預設最多抽查 120 條。
-- TLS 憑證：檢查 `www.taiwanlife.com`、`ezbao.taiwanlife.com`、`customer.taiwanlife.com`、`consultancyservice.taiwanlife.com`、`accessibility.taiwanlife.com`。
+- TLS 憑證：未設定 `ssl.hosts` 時沿用 `allowed_hosts`，目前檢查 `www.taiwanlife.com`、`ezbao.taiwanlife.com`、`customer.taiwanlife.com`、`consultancyservice.taiwanlife.com`、`accessibility.taiwanlife.com`。

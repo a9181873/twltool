@@ -42,7 +42,7 @@ try {
 if ($failCount -gt 0) { $errors.Add("report has fail=$failCount") }
 if ($WarnIsFailure -and $warnCount -gt 0) { $errors.Add("report has warn=$warnCount") }
 
-$screenshots = @($report.screenshots)
+$screenshots = if ($report.screenshots) { @($report.screenshots) } else { @() }
 if ($screenshots.Count -lt $MinScreenshots) {
     $errors.Add("not enough screenshots: $($screenshots.Count) < $MinScreenshots")
 }

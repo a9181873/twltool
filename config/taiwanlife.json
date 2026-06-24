@@ -1,6 +1,7 @@
 {
   "target_name": "台灣人壽官網",
   "base_url": "https://www.taiwanlife.com/",
+  "global_timeout_seconds": 1800,
   "allowed_hosts": [
     "www.taiwanlife.com",
     "ezbao.taiwanlife.com",
@@ -45,13 +46,7 @@
     "port": 443,
     "warn_days": 30,
     "fail_days": 7,
-    "hosts": [
-      "www.taiwanlife.com",
-      "ezbao.taiwanlife.com",
-      "customer.taiwanlife.com",
-      "consultancyservice.taiwanlife.com",
-      "accessibility.taiwanlife.com"
-    ]
+    "_hosts_comment": "未設定 hosts 時自動沿用頂層 allowed_hosts"
   },
   "retry": {
     "enabled": true,
@@ -616,13 +611,7 @@
     "enabled": true,
     "max_links": 120,
     "request_timeout_ms": 25000,
-    "include_hosts": [
-      "www.taiwanlife.com",
-      "ezbao.taiwanlife.com",
-      "customer.taiwanlife.com",
-      "consultancyservice.taiwanlife.com",
-      "accessibility.taiwanlife.com"
-    ],
+    "_include_hosts_comment": "未設定 include_hosts 時自動沿用頂層 allowed_hosts",
     "seed_paths": [
       "/",
       "/product-personal-life-TermLife",

@@ -14,6 +14,8 @@ python3 -m unittest discover -s tests -v
 ./venv/bin/python -m unittest discover -s tests -v
 ```
 
+選用的 lint、format、type check、coverage、pre-commit 工具放在 `dev-requirements.txt`；基本回歸測試不需要先安裝它們。
+
 ## 測試範圍
 
 - JSON/Markdown 報表結構與序列化輸出。
@@ -21,10 +23,11 @@ python3 -m unittest discover -s tests -v
 - `config/taiwanlife.json` 設定載入與 `TaiwanLifeMonitor` 基本初始化。
 - URL normalization、狀態判斷、Email 收件人拆分等 helper 行為。
 - Playwright page listener 的資源錯誤、request failed、console error、page error 收集邏輯。
+- `safe_check` 例外包裝與 `global_timeout_seconds` 整體 timeout 的回歸行為。
 
 ## 設計原則
 
-- 測試不得呼叫 `TaiwanLifeMonitor.run()`，避免觸發 TLS、瀏覽器或外部網路。
+- 若測試 `TaiwanLifeMonitor.run()`，必須 patch TLS、瀏覽器、清理等外部階段，避免觸發真實網路或 Playwright。
 - 測試 SMTP 時一律 patch `smtplib.SMTP`，不得寄送真實 Email。
 - 新增測試優先使用 `unittest` 與標準函式庫假物件，只有必要時才把輕量開發依賴加入 `dev-requirements.txt`。
 - 測試檔只應維護在 `tests/`，測試說明維護在本檔。

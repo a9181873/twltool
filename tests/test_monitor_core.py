@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+import time
 import unittest
 from datetime import datetime
 from pathlib import Path
@@ -8,6 +9,7 @@ from unittest.mock import patch
 
 from taiwanlife_monitor.monitor import (
     CheckResult,
+    GlobalTimeoutError,
     TAIPEI_TZ,
     TaiwanLifeMonitor,
     VERSION,
@@ -205,6 +207,55 @@ class RetryAndHealthTests(unittest.TestCase):
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["version"], VERSION)
         self.assertIn("python", payload)
+
+
+class SafetyRegressionTests(unittest.TestCase):
+    def test_safe_check_records_unhandled_exception_as_failed_check(self):
+        tmp, monitor = make_monitor()
+        self.addCleanup(tmp.cleanup)
+
+        with monitor.safe_check("demo", "Demo Check", {"url": "https://example.com/demo"}):
+            raise RuntimeError("demo boom")
+
+        self.assertEqual(len(monitor.checks), 1)
+        check = monitor.checks[0]
+        self.assertEqual(check.id, "demo")
+        self.assertEqual(check.status, "fail")
+        self.assertEqual(check.evidence["url"], "https://example.com/demo")
+        self.assertEqual(check.evidence["error_type"], "unknown")
+        self.assertIn("demo boom", check.evidence["error_message"])
+
+    def test_safe_check_does_not_swallow_global_timeout(self):
+        tmp, monitor = make_monitor()
+        self.addCleanup(tmp.cleanup)
+
+        with self.assertRaises(GlobalTimeoutError):
+            with monitor.safe_check("timeout", "Timeout Check"):
+                raise GlobalTimeoutError("stop now")
+
+        self.assertEqual(monitor.checks, [])
+
+    def test_run_records_global_timeout_and_skips_remaining_phases(self):
+        tmp, monitor = make_monitor({"global_timeout_seconds": 0.001})
+        self.addCleanup(tmp.cleanup)
+
+        def slow_ssl_check():
+            time.sleep(0.02)
+
+        with patch.object(monitor, "run_ssl_check", side_effect=slow_ssl_check):
+            with patch.object(monitor, "run_browser_checks") as browser_checks:
+                with patch.object(monitor, "cleanup_old_outputs") as cleanup:
+                    report, json_path, md_path = monitor.run()
+
+        self.assertFalse(report["ok"])
+        timeout_checks = [item for item in report["checks"] if item["id"] == "global-timeout"]
+        self.assertEqual(len(timeout_checks), 1)
+        self.assertEqual(timeout_checks[0]["status"], "fail")
+        self.assertEqual(timeout_checks[0]["evidence"]["timeout_seconds"], 0.001)
+        browser_checks.assert_not_called()
+        cleanup.assert_not_called()
+        self.assertTrue(json_path.exists())
+        self.assertTrue(md_path.exists())
 
 
 class ListenerRegressionTests(unittest.TestCase):

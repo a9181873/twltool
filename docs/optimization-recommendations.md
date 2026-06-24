@@ -4,9 +4,9 @@
 
 ## P0：先做
 
-1. RPA84 selector 校準
+1. RPA84 頁面元素辨識
    - 優先使用 Playwright 語意 locator，例如 role、label、text；必要時再要求官網加 `data-testid`。
-   - 避免只依賴長 CSS selector 或頁面版位。
+   - 避免只依賴很長的 CSS 路徑或頁面版位。
    - 來源：<https://playwright.dev/python/docs/locators>
 
 2. 失敗證據包
@@ -32,7 +32,7 @@
    - 來源：<https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.ssh/>、<https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.executecommand/>
 
 2. 告警降噪
-   - 以 `problem_checks.id`、URL、selector 或 scenario id 建立錯誤指紋。
+   - 以 `problem_checks.id`、URL、scenario id 或錯誤訊息建立錯誤指紋。
    - 同一錯誤可設定冷卻時間，或連續 N 次失敗才升級事故。
    - n8n 若只作編排，可用 Error Workflow 轉接既有告警系統，但不存 SMTP 密碼。
    - 來源：<https://docs.n8n.io/flow-logic/error-handling/>

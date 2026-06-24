@@ -47,8 +47,8 @@ n8n Schedule Trigger
 
 ### L4 RPA84 業務流程
 
-- RPA84 需求直接放在 `config/taiwanlife.json` 的 `rpa84.scenarios`，原 Word RPA 流程文件已由本專案取代。
-- `rpa84.enabled=false` 是整體保護開關；啟用後第一版只執行低風險的全站搜尋場景，其餘商品、試算、查詢、收藏、匯出流程先待 selector 校準。
+- RPA84 需求直接放在 `config/taiwanlife.json` 的 `rpa84.scenarios`。
+- `rpa84.enabled=false` 是整體保護開關；啟用後第一版只執行低風險的全站搜尋場景，其餘商品、試算、查詢、收藏、匯出流程先補齊可執行步驟。
 - 每個場景沿用既有檢查明細、evidence、截圖與 stdout `problem_checks`。
 
 ## 部署模式
@@ -109,7 +109,7 @@ docker run --rm --env-file .env -v /opt/taiwanlife-monitor/reports:/app/reports 
 - SMTP、Power Automate webhook、SSH 私鑰等敏感資訊放環境變數、Vault 或平台 credential，不寫入 Git。
 - n8n 啟用 workflow 權限控管與 2FA。
 - 巡檢頻率預設每 12 小時一次，避免對官網造成額外壓力。
-- 第一週每日檢查誤報，調整 selectors、timeout 與忽略清單。
+- 第一週每日檢查誤報，調整頁面元素辨識、timeout 與忽略清單。
 
 ## 已參考資訊
 

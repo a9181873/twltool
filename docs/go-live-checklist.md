@@ -27,8 +27,8 @@
 - [ ] `reports/latest.json` 與 `reports/latest.md` 可正常產出。
 - [ ] 異常時 Python stdout 最後一行仍是排程器可解析 JSON。
 - [ ] stdout payload 包含 `scheduler`、`summary`、`problem_checks`、`latest_json`、`latest_md`、`screenshots`。
-- [ ] `config/taiwanlife.json` 的 `rpa84.scenarios` 已對照舊 RPA 流程需求確認；原 docx 不再作為部署依賴。
-- [ ] 若啟用 RPA84，先用截圖或 headful 模式確認 selector 穩定。
+- [ ] `config/taiwanlife.json` 的 `rpa84.scenarios` 已對照 RPA84 需求確認。
+- [ ] 若啟用 RPA84，已實際跑過並確認點擊、輸入、驗證與截圖結果正常。
 
 ## Windows / Power Automate
 

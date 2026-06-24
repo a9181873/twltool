@@ -1,6 +1,6 @@
 # 台灣人壽官網巡檢工具
 
-這個資料夾已整理成可部署的巡檢專案：Python 負責實際檢查，排程可由 Windows Task Scheduler、Power Automate、n8n、Docker 或 cron 觸發。主程式在 `taiwanlife_monitor/monitor.py`。
+這個資料夾已整理成可部署的巡檢專案：Python 負責實際檢查，排程可由 Windows Task Scheduler、Power Automate、n8n、Docker 或 cron 觸發。主程式在 `taiwanlife_monitor/monitor.py`，RPA84 官網功能需求也由同一套巡檢核心執行。
 
 ## 監控內容
 
@@ -12,6 +12,12 @@
 - JSON 與 Markdown 報表，並保留截圖
 - SMTP Email 告警，也可由 Windows wrapper 轉送 Power Automate / Teams
 - RPA84 官網功能自動檢查需求清單與可逐步啟用的場景設定
+
+巡查不是單純寫死網址。現況採混合模式：
+
+- `pages` 固定放必看頁面，確保首頁、商品、理賠、投資、據點、新聞等關鍵頁一定被檢查。
+- `link_crawl` 從種子頁動態抓站內連結，預設最多抽查 120 條，官網新增連結也有機會被巡到。
+- RPA84 是業務流程檢查，會用 `rpa84.scenarios` 描述「要怎麼點、怎麼填、怎麼判斷成功」。
 
 ## 技術與用途
 
@@ -31,8 +37,6 @@
 | Windows Task Scheduler | 公司內部排程 | 定時啟動 PowerShell wrapper |
 | Power Automate / Teams | 通知與後續流程 | 異常時自動發 Teams、Email 或工單 |
 
-`scripts/upload_to_drive.py` 是舊 OCI/Hermes 過渡期工具，預設不納入 Docker、n8n 或 Windows 排程；正式保存建議改用 SharePoint/OneDrive 或網路磁碟。
-
 ## 能取代的人工作業
 
 - 定時開官網與重要子頁。
@@ -50,7 +54,7 @@
 
 ## 後續優化方向
 
-- 依正式官網 DOM 校準 RPA84 其餘 selector，逐步打開更多功能場景。
+- 補齊 RPA84 其餘流程的自動點擊、輸入、驗證步驟，逐步打開更多功能場景。
 - 報表與截圖改存 SharePoint/OneDrive。
 - 搜尋檢查改成確認結果頁或結果列表，降低誤判。
 - 第三方追蹤像素錯誤改成 warn 或忽略，避免不必要 fail。
@@ -84,11 +88,13 @@ export ALERT_EMAIL_ENABLED=true
 
 ## RPA84 功能流程
 
-RPA84 已直接整合進 `config/taiwanlife.json` 的 `rpa84.scenarios`。原 Word RPA 流程文件是歷史來源，現在由本專案取代，不再需要把 docx 當成部署或交接輸入。
+RPA84 已直接整合進 `config/taiwanlife.json` 的 `rpa84.scenarios`。
 
 - `monitor.py` 還是唯一巡檢核心。
 - `config/taiwanlife.json` 同時管理一般巡檢與 RPA84 場景。
-- 預設 `rpa84.enabled=false`，避免 selector 尚未校準前在正式排程誤報。
+- `rpa84.enabled=false` 是正式排程保護開關，不代表需求不能做。
+- 截圖是執行結果證據；自動化真正執行的是 `steps`，也就是開頁、點擊、輸入、送出、驗證文字或結果。
+- 已有 `steps` 的場景可由現在架構執行；尚未有 `steps` 的場景會先列為需求項目，再補成可執行步驟。
 - 可用 CLI 或環境變數啟用：
 
 ```bash
@@ -101,7 +107,7 @@ python -m taiwanlife_monitor.monitor --config config/taiwanlife.json --output-di
 MONITOR_ENABLE_RPA84=true python -m taiwanlife_monitor.monitor --config config/taiwanlife.json --output-dir reports
 ```
 
-RPA84 整體預設關閉；啟用後第一版只會執行已開啟的「搜尋全站：醫療」場景。其餘商品、試算、查詢、收藏、匯出等流程已在主設定完成需求盤點，待正式環境以 headful Playwright 校準 selector 後逐項啟用。
+第一版已把所有 RPA84 需求放進主設定，其中「搜尋全站：醫療」已具備可執行步驟。其餘商品、試算、查詢、收藏、匯出等流程會在同一套 `monitor.py` runner 內補齊點擊、輸入、驗證，以及測試帳號或副作用清理規則後啟用。
 
 ## n8n 整合
 
@@ -196,7 +202,7 @@ reports/screenshots/<run_id>_<page_id>.png
 
 固定頁面截圖時間點：
 
-1. 開啟頁面，等待 DOM 載入完成。
+1. 開啟頁面，等待頁面基本載入完成。
 2. 嘗試等待網路閒置，預設最多 15 秒；等不到也會繼續。
 3. 讀取頁面標題與文字。
 4. 檢查標題、必要文字、HTTP 狀態、壞圖、壞 JS、壞 CSS、XHR/Fetch 失敗。
@@ -259,23 +265,8 @@ Windows 可用 PowerShell 版：
 - 架構藍圖：`docs/architecture-blueprint.md`
 - 部署說明：`docs/deployment.md`
 - 第一版上線檢查清單：`docs/go-live-checklist.md`
+- RPA84 步驟新增方式：`docs/rpa84-step-authoring.md`
 - 優化建議：`docs/optimization-recommendations.md`
-
-## 舊 Google Drive 上傳腳本
-
-`scripts/upload_to_drive.py` 是過去 OCI/Hermes 過渡期方便人工查看截圖的工具，不是目前正式排程的一部分。`requirements.txt`、Docker image 與 n8n workflow 預設都不安裝或呼叫 Google Drive API。
-
-若公司仍要保留，需另外補 Google API 套件、OAuth token 管理、路徑參數化與排程後置步驟。正式環境建議改用本機、網路磁碟或 SharePoint/OneDrive。
-
-```
-python3 scripts/upload_to_drive.py
-```
-
-機制：
-- 使用既有 `google_token.json` OAuth 權杖（需含 `drive.file` scope）
-- 自動刷新過期 token
-- 依檔名去重，已上傳的略過
-- 支援續傳（resumable upload）
 
 ## 建議排程
 

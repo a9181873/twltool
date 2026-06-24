@@ -174,12 +174,10 @@
   "rpa84": {
     "enabled": false,
     "schema_version": "1.0",
-    "legacy_source_document": "RPA流程步驟文件_數經部_官網功能自動檢查_V3.docx",
-    "canonical_source": "config/taiwanlife.json:rpa84.scenarios",
     "scenario_set": "RPA84 官網功能自動檢查",
     "notes": [
-      "原 Word RPA 流程已由本專案取代；config/taiwanlife.json 內的 rpa84.scenarios 是目前正式需求與執行設定。",
-      "enabled=false 的項目已完成需求盤點，但仍需用正式環境校準 selector 後再打開。",
+      "rpa84.scenarios 是目前正式需求與執行設定。",
+      "enabled=false 的項目已完成需求盤點；補齊可執行操作步驟後再打開。",
       "有寄信、收藏、匯出、下載等副作用的流程須先確認測試帳號、測試收件人與清理規則。"
     ],
     "scenarios": [

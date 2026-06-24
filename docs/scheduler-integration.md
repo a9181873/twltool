@@ -78,9 +78,9 @@ Docker 版 n8n 不會自動進到 host 執行 Python，正式環境建議用 SSH
 
 ## RPA84 場景
 
-RPA84 需求直接在 `config/taiwanlife.json` 的 `rpa84.scenarios`。原 Word RPA 流程文件已由本專案取代；目前以主設定作為正式需求與執行來源。
+RPA84 需求直接在 `config/taiwanlife.json` 的 `rpa84.scenarios`，目前以主設定作為正式需求與執行來源。
 
-RPA84 整體預設不啟用，避免 selector 尚未校準前誤報。啟用後只會執行場景內 `enabled=true` 的項目。
+RPA84 整體預設不啟用，避免尚未補齊可執行步驟的流程在正式排程誤報。啟用後只會執行場景內 `enabled=true` 的項目。
 
 啟用方式：
 

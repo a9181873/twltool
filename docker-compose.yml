@@ -12,6 +12,7 @@ services:
       PYTHONUNBUFFERED: "1"
       MONITOR_SCHEDULER: ${MONITOR_SCHEDULER:-docker-compose}
       MONITOR_ENABLE_RPA84: ${MONITOR_ENABLE_RPA84:-false}
+      ALERT_EMAIL_ENABLED: ${ALERT_EMAIL_ENABLED:-false}
     volumes:
       - ./config:/app/config:ro
       - ./reports:/app/reports
@@ -31,6 +32,7 @@ services:
       - --output-dir
       - reports
       - --email-on-fail
+      - --fail-exit-code
 
   n8n:
     image: docker.n8n.io/n8nio/n8n

@@ -5,6 +5,7 @@
 - [ ] 建立專用 VM 或容器主機。
 - [ ] 安裝 Python 3.12+。
 - [ ] 安裝 Playwright 與 Chromium。
+- [ ] Windows 主機已安裝 OpenSSL CLI，且 `openssl.exe` 在 `PATH`。
 - [ ] 確認主機可解析並連線 `www.taiwanlife.com:443`。
 - [ ] 確認主機可連線公司 SMTP 或 Power Automate webhook。
 - [ ] 系統時區設定為 `Asia/Taipei`。
@@ -15,6 +16,7 @@
 - [ ] `/opt/taiwanlife-monitor` 僅允許維運與該帳號存取。
 - [ ] 報表資料夾不可公開下載。
 - [ ] SMTP 密碼、Power Automate webhook、SSH 私鑰不可寫入 Git、workflow JSON 或 README。
+- [ ] `git remote -v` 不含 GitHub PAT、token 或密碼。
 - [ ] 若使用 SSH node，只允許執行固定 command 或受限 shell。
 
 ## 巡檢器
@@ -25,7 +27,7 @@
 - [ ] `reports/latest.json` 與 `reports/latest.md` 可正常產出。
 - [ ] 異常時 Python stdout 最後一行仍是排程器可解析 JSON。
 - [ ] stdout payload 包含 `scheduler`、`summary`、`problem_checks`、`latest_json`、`latest_md`、`screenshots`。
-- [ ] `config/rpa84_scenarios.json` 已對照 RPA84 文件確認。
+- [ ] `config/taiwanlife.json` 的 `rpa84.scenarios` 已對照舊 RPA 流程需求確認；原 docx 不再作為部署依賴。
 - [ ] 若啟用 RPA84，先用截圖或 headful 模式確認 selector 穩定。
 
 ## Windows / Power Automate
@@ -33,6 +35,7 @@
 - [ ] `scripts/run_taiwanlife_monitor.ps1` 可手動執行。
 - [ ] Windows Task Scheduler 使用專用帳號執行 wrapper。
 - [ ] 排程設定為每 12 小時，且不允許平行 instance。
+- [ ] 如需漏跑偵測，已測試 `scripts\taiwanlife_watchdog.ps1` 或 wrapper `-RunWatchdogBefore`。
 - [ ] 若使用 Power Automate，`POWER_AUTOMATE_WEBHOOK_URL` 放在環境變數或安全設定。
 - [ ] fail/warn 時 Power Automate 能收到 `problem_checks` 並發 Teams/Email/工單。
 

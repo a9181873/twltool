@@ -47,8 +47,8 @@ n8n Schedule Trigger
 
 ### L4 RPA84 業務流程
 
-- RPA84 需求放在 `config/rpa84_scenarios.json`。
-- 預設只啟用低風險的全站搜尋場景，其餘商品、試算、查詢、收藏、匯出流程先待 selector 校準。
+- RPA84 需求直接放在 `config/taiwanlife.json` 的 `rpa84.scenarios`，原 Word RPA 流程文件已由本專案取代。
+- `rpa84.enabled=false` 是整體保護開關；啟用後第一版只執行低風險的全站搜尋場景，其餘商品、試算、查詢、收藏、匯出流程先待 selector 校準。
 - 每個場景沿用既有檢查明細、evidence、截圖與 stdout `problem_checks`。
 
 ## 部署模式
@@ -98,8 +98,8 @@ docker run --rm --env-file .env -v /opt/taiwanlife-monitor/reports:/app/reports 
 建議：
 
 - JSON/Markdown 保存 90 天。
-- 截圖保存 14-30 天。
-- 異常截圖保存 180 天。
+- 截圖保存 90 天，與目前 `config/taiwanlife.json` 保持一致。
+- 若未來要讓異常截圖保存 180 天，需先在報表中標記 abnormal artifact，再調整清理邏輯。
 - 報表目錄不應公開掛在 Web server。
 
 ## 正式上線最低需求
@@ -116,3 +116,4 @@ docker run --rm --env-file .env -v /opt/taiwanlife-monitor/reports:/app/reports 
 - 台灣人壽官網首頁目前可見四大主導覽、商品快搜、熱門活動、最新消息與頁尾關鍵連結。
 - n8n 官方文件：Schedule Trigger 可依固定間隔或 Cron 執行 workflow；Execute Command 在 Docker 內會執行於 n8n container。
 - Playwright 官方文件：支援 Chromium/WebKit/Firefox，適合端對端測試與一般瀏覽器自動化。
+- 進一步優化建議整理於 `docs/optimization-recommendations.md`。

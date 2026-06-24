@@ -29,6 +29,8 @@ python -m venv venv
 .\scripts\run_taiwanlife_monitor.ps1
 ```
 
+Windows 主機也需安裝 OpenSSL CLI 並放入 `PATH`，TLS 憑證檢查會用它解析到期日。
+
 啟用 RPA84：
 
 ```powershell
@@ -57,6 +59,8 @@ cp .env.example .env
 docker compose build taiwanlife-monitor
 docker compose run --rm taiwanlife-monitor
 ```
+
+若要讓 Python SMTP 在 fail/warn 時寄信，請在 `.env` 設定 `ALERT_EMAIL_ENABLED=true`，並填入 SMTP/收件人環境變數。
 
 健康檢查：
 
@@ -99,7 +103,7 @@ cd /opt/taiwanlife-monitor
 docker compose run --rm taiwanlife-monitor
 ```
 
-6. SSH node 的 stdout 接回「解析巡檢 stdout」節點。
+6. SSH node 的 stdout 接回「解析巡檢 stdout」節點。Compose 預設以 `MONITOR_SCHEDULER=docker-compose` 標記來源，且命令已帶 `--fail-exit-code`；若改跑 venv，請在遠端命令加上 `--scheduler n8n --fail-exit-code`。
 
 ### 模式 D：n8n Execute Command 同機執行
 
@@ -126,8 +130,10 @@ python3 -m venv venv
 測試：
 
 ```bash
-./venv/bin/python -m taiwanlife_monitor.monitor --config config/taiwanlife.json --output-dir reports
+./venv/bin/python -m taiwanlife_monitor.monitor --config config/taiwanlife.json --output-dir reports --scheduler n8n --fail-exit-code
 ```
+
+RPA84 需求已在 `config/taiwanlife.json` 的 `rpa84.scenarios`，原 Word RPA 流程文件已由本專案取代，不需部署到主機。
 
 ## 三、n8n 設定
 
@@ -172,6 +178,7 @@ docker compose run --rm taiwanlife-monitor
 - `.env` 不得 commit。
 - `N8N_ENCRYPTION_KEY` 正式環境要換成長隨機字串。
 - SMTP 帳號使用 send-only 權限；Power Automate webhook URL 不得寫入 Git。
+- `git remote -v` 不得含 GitHub PAT、token 或密碼；請改用 deploy key 或 Git credential helper。
 - `reports/` 不應公開掛 Web server。
 - n8n UI 限 VPN、堡壘機或管理網段。
 - 若使用 SSH node，建議用專用 key、限制來源 IP、禁用互動 shell。

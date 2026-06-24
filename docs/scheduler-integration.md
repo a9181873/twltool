@@ -78,7 +78,9 @@ Docker 版 n8n 不會自動進到 host 執行 Python，正式環境建議用 SSH
 
 ## RPA84 場景
 
-RPA84 需求在 `config/rpa84_scenarios.json`。預設不啟用，避免 selector 尚未校準前誤報。
+RPA84 需求直接在 `config/taiwanlife.json` 的 `rpa84.scenarios`。原 Word RPA 流程文件已由本專案取代；目前以主設定作為正式需求與執行來源。
+
+RPA84 整體預設不啟用，避免 selector 尚未校準前誤報。啟用後只會執行場景內 `enabled=true` 的項目。
 
 啟用方式：
 
@@ -90,4 +92,19 @@ RPA84 需求在 `config/rpa84_scenarios.json`。預設不啟用，避免 selecto
 
 ```bash
 MONITOR_ENABLE_RPA84=true python -m taiwanlife_monitor.monitor --config config/taiwanlife.json --output-dir reports
+```
+
+## Watchdog
+
+Linux/Hermes 可用：
+
+```bash
+MAX_AGE_HOURS=14 MIN_SCREENSHOTS=7 WARN_IS_FAILURE=1 ./scripts/taiwanlife_watchdog.sh reports/latest.json
+```
+
+Windows 可用：
+
+```powershell
+.\scripts\taiwanlife_watchdog.ps1 -ReportPath reports\latest.json -WarnIsFailure
+.\scripts\run_taiwanlife_monitor.ps1 -RunWatchdogBefore
 ```

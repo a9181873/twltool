@@ -16,6 +16,7 @@ MONITOR_WORKDIR=/opt/taiwanlife-monitor
 MONITOR_PYTHON_BIN=./venv/bin/python
 MONITOR_CONFIG=config/taiwanlife.json
 MONITOR_OUTPUT_DIR=reports
+MONITOR_ENABLE_RPA84=false
 ```
 
 命令執行後，Code 節點會從 Python stdout 最後幾行尋找 JSON payload，並輸出 `summary`、`problem_checks`、`latest_json`、`latest_md`、`screenshots` 與 `should_notify_external`。
@@ -35,7 +36,7 @@ MONITOR_OUTPUT_DIR=reports
 
 ```bash
 cd "${MONITOR_SSH_WORKDIR:-/opt/taiwanlife-monitor}"
-python -m taiwanlife_monitor.monitor --config config/taiwanlife.json --output-dir reports
+python -m taiwanlife_monitor.monitor --config config/taiwanlife.json --output-dir reports --scheduler n8n --fail-exit-code
 ```
 
 5. SSH node 的 stdout 輸出接回「解析巡檢 stdout」節點。
@@ -46,6 +47,8 @@ python -m taiwanlife_monitor.monitor --config config/taiwanlife.json --output-di
 cd "${MONITOR_SSH_WORKDIR:-/opt/taiwanlife-monitor}"
 docker compose run --rm taiwanlife-monitor
 ```
+
+RPA84 場景已在 `config/taiwanlife.json` 的 `rpa84.scenarios`，不需要另行掛載舊 Word 文件或外部場景檔。
 
 ## 外部通知
 

@@ -5,8 +5,8 @@
 RPA84 需求已依現有架構整合：
 
 - 主程式仍是 `taiwanlife_monitor/monitor.py`。
-- 需求與參數放在 `config/rpa84_scenarios.json`。
-- `config/taiwanlife.json` 的 `rpa84.config_path` 指向上述場景檔。
+- 需求與參數直接放在 `config/taiwanlife.json` 的 `rpa84.scenarios`。
+- 原 `RPA流程步驟文件_數經部_官網功能自動檢查_V3.docx` 是舊 RPA 流程來源，現在由本專案取代，不再作為部署依賴。
 - 預設 `rpa84.enabled=false`，避免未校準 selector 的流程在正式排程誤報。
 - 開啟方式為 CLI `--enable-rpa84` 或環境變數 `MONITOR_ENABLE_RPA84=true`。
 

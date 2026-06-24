@@ -3,7 +3,8 @@ param(
     [string]$RepoRoot = "",
     [string]$StartTime = "08:00",
     [int]$HoursInterval = 12,
-    [switch]$EnableRpa84
+    [switch]$EnableRpa84,
+    [switch]$RunWatchdogBefore
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,6 +27,9 @@ $arguments = @(
 
 if ($EnableRpa84) {
     $arguments += "-EnableRpa84"
+}
+if ($RunWatchdogBefore) {
+    $arguments += "-RunWatchdogBefore"
 }
 
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ($arguments -join " ")

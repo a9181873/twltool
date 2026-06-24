@@ -23,4 +23,4 @@ VOLUME ["/app/reports"]
 
 USER monitor
 
-CMD ["python", "-m", "taiwanlife_monitor.monitor", "--config", "config/taiwanlife.json", "--output-dir", "reports", "--email-on-fail"]
+CMD ["python", "-m", "taiwanlife_monitor.monitor", "--config", "config/taiwanlife.json", "--output-dir", "reports", "--email-on-fail", "--fail-exit-code"]

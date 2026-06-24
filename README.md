@@ -22,17 +22,16 @@
 | Python | 主程式與報表產生 | 自動執行巡檢流程、整理結果 |
 | Playwright | 控制 Chromium 瀏覽器 | 像真人一樣開網頁、搜尋、截圖 |
 | Chromium | 實際瀏覽器 | 呈現真實網頁畫面 |
-| `config/taiwanlife.json` | 巡檢設定 | 集中管理頁面、關鍵字、憑證與連結檢查 |
+| `config/taiwanlife.json` | 巡檢設定 | 集中管理頁面、關鍵字、憑證、連結檢查與 RPA84 場景 |
 | OpenSSL | TLS 憑證到期檢查 | 自動提醒憑證是否快過期 |
 | JSON/Markdown | 報表格式 | 同時給機器讀、給人看 |
-| `scripts/taiwanlife_watchdog.sh` | 漏跑與異常檢查 | 發現巡檢沒跑、報表過舊、fail/warn |
+| `scripts/taiwanlife_watchdog.sh` / `.ps1` | 漏跑與異常檢查 | 發現巡檢沒跑、報表過舊、fail/warn |
 | Docker | 固定執行環境 | 降低部署環境差異 |
 | n8n | 排程與執行 | 呼叫同一支 Python CLI，不負責寄信 |
-| Google Drive API | 截圖上傳 | 自動保存截圖到雲端資料夾 |
 | Windows Task Scheduler | 公司內部排程 | 定時啟動 PowerShell wrapper |
 | Power Automate / Teams | 通知與後續流程 | 異常時自動發 Teams、Email 或工單 |
 
-目前 `requirements.txt` 只列 Playwright。`scripts/upload_to_drive.py` 需要 Google API 套件，正式使用前要補依賴或改成 SharePoint/OneDrive。
+`scripts/upload_to_drive.py` 是舊 OCI/Hermes 過渡期工具，預設不納入 Docker、n8n 或 Windows 排程；正式保存建議改用 SharePoint/OneDrive 或網路磁碟。
 
 ## 能取代的人工作業
 
@@ -53,10 +52,10 @@
 
 - 依正式官網 DOM 校準 RPA84 其餘 selector，逐步打開更多功能場景。
 - 報表與截圖改存 SharePoint/OneDrive。
-- Google Drive upload 補依賴，或改用 Microsoft Graph。
 - 搜尋檢查改成確認結果頁或結果列表，降低誤判。
 - 第三方追蹤像素錯誤改成 warn 或忽略，避免不必要 fail。
 - 增加 ZIP/manifest 封存，方便稽核與交接。
+- 進一步建議見 `docs/optimization-recommendations.md`。
 
 ## 本機安裝
 
@@ -72,22 +71,23 @@ python3 -m venv venv
 ./venv/bin/python -m taiwanlife_monitor.monitor --config config/taiwanlife.json --output-dir reports
 ```
 
-異常時直接由 Python 寄信：
+異常時直接由 Python 寄信需明確啟用 SMTP：
 
 ```bash
 cp .env.example .env
 set -a
 . ./.env
 set +a
+export ALERT_EMAIL_ENABLED=true
 ./venv/bin/python -m taiwanlife_monitor.monitor --config config/taiwanlife.json --output-dir reports --email-on-fail
 ```
 
 ## RPA84 功能流程
 
-RPA84 需求已整理到 `config/rpa84_scenarios.json`。目前採用現有架構整合：
+RPA84 已直接整合進 `config/taiwanlife.json` 的 `rpa84.scenarios`。原 Word RPA 流程文件是歷史來源，現在由本專案取代，不再需要把 docx 當成部署或交接輸入。
 
 - `monitor.py` 還是唯一巡檢核心。
-- `config/taiwanlife.json` 透過 `rpa84.config_path` 指向場景檔。
+- `config/taiwanlife.json` 同時管理一般巡檢與 RPA84 場景。
 - 預設 `rpa84.enabled=false`，避免 selector 尚未校準前在正式排程誤報。
 - 可用 CLI 或環境變數啟用：
 
@@ -101,7 +101,7 @@ python -m taiwanlife_monitor.monitor --config config/taiwanlife.json --output-di
 MONITOR_ENABLE_RPA84=true python -m taiwanlife_monitor.monitor --config config/taiwanlife.json --output-dir reports
 ```
 
-第一版先開啟「搜尋全站：醫療」場景，其餘商品、試算、查詢、收藏、匯出等流程已在設定檔中完成需求盤點，待正式環境以 headful Playwright 校準 selector 後逐項啟用。
+RPA84 整體預設關閉；啟用後第一版只會執行已開啟的「搜尋全站：醫療」場景。其餘商品、試算、查詢、收藏、匯出等流程已在主設定完成需求盤點，待正式環境以 headful Playwright 校準 selector 後逐項啟用。
 
 ## n8n 整合
 
@@ -162,6 +162,8 @@ wrapper 只會在 `fail > 0` 或 `warn > 0` 時 POST 最新 stdout payload，pay
 
 ```powershell
 .\scripts\register_windows_task.ps1 -TaskName TaiwanLifeWebsiteMonitor -HoursInterval 12
+# 若要排程每次執行前先檢查上一份 latest.json：
+.\scripts\register_windows_task.ps1 -TaskName TaiwanLifeWebsiteMonitor -HoursInterval 12 -RunWatchdogBefore
 ```
 
 ## 報表位置
@@ -240,6 +242,13 @@ reports/screenshots/<run_id>_<page_id>.png
 MAX_AGE_HOURS=14 MIN_SCREENSHOTS=7 WARN_IS_FAILURE=1 ./scripts/taiwanlife_watchdog.sh reports/latest.json
 ```
 
+Windows 可用 PowerShell 版：
+
+```powershell
+.\scripts\taiwanlife_watchdog.ps1 -ReportPath reports\latest.json -WarnIsFailure
+.\scripts\run_taiwanlife_monitor.ps1 -RunWatchdogBefore
+```
+
 退出碼：
 
 - `0`：最新報表正常。
@@ -250,12 +259,13 @@ MAX_AGE_HOURS=14 MIN_SCREENSHOTS=7 WARN_IS_FAILURE=1 ./scripts/taiwanlife_watchd
 - 架構藍圖：`docs/architecture-blueprint.md`
 - 部署說明：`docs/deployment.md`
 - 第一版上線檢查清單：`docs/go-live-checklist.md`
+- 優化建議：`docs/optimization-recommendations.md`
 
-## 截圖自動上傳 Google Drive
+## 舊 Google Drive 上傳腳本
 
-巡檢產生截圖後，`scripts/upload_to_drive.py` 會自動將新截圖上傳到 Google Drive 的「台壽巡檢截圖」資料夾。
+`scripts/upload_to_drive.py` 是過去 OCI/Hermes 過渡期方便人工查看截圖的工具，不是目前正式排程的一部分。`requirements.txt`、Docker image 與 n8n workflow 預設都不安裝或呼叫 Google Drive API。
 
-這是過渡性功能：目前巡檢暫時跑在 OCI/Hermes 上，直接查看主機檔案不方便，所以先把截圖同步到 Google Drive 方便人工查看。未來若部署到公司內部 Windows 電腦，截圖與報表可直接存在本機、網路磁碟或 SharePoint/OneDrive，屆時可停用 Google Drive 上傳。
+若公司仍要保留，需另外補 Google API 套件、OAuth token 管理、路徑參數化與排程後置步驟。正式環境建議改用本機、網路磁碟或 SharePoint/OneDrive。
 
 ```
 python3 scripts/upload_to_drive.py
@@ -273,7 +283,6 @@ python3 scripts/upload_to_drive.py
 
 - 每 12 小時執行一次完整巡檢。
 - 巡檢後執行 watchdog，確認 `reports/latest.json` 新鮮且無 fail/warn。
-- 巡檢完成後自動上傳截圖到 Google Drive。
 - Email 僅在 `fail` 或 `warn` 發生時寄送。
 - 若未來要提高頻率，先和 WAF/SOC 團隊確認來源 IP、User-Agent 與流量上限。
 

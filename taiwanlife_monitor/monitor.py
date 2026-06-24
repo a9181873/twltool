@@ -129,6 +129,13 @@ def env_or_value(value: str | None, env_name: str | None, default: str = "") -> 
     return value or default
 
 
+def truthy_env(name: str) -> bool | None:
+    value = os.environ.get(name)
+    if value is None:
+        return None
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def split_emails(value: str | list[str]) -> list[str]:
     if isinstance(value, list):
         return [item.strip() for item in value if item.strip()]
@@ -701,24 +708,11 @@ class TaiwanLifeMonitor:
                 continue
         return None
 
-    def resolve_config_path(self, value: str) -> Path:
-        path = Path(value)
-        if path.is_absolute():
-            return path
-        config_dir = Path(self.config.get("_config_dir", "."))
-        candidates = [config_dir / path, config_dir.parent / path, Path.cwd() / path]
-        for candidate in candidates:
-            if candidate.exists():
-                return candidate
-        return Path.cwd() / path
-
     def load_rpa84_scenarios(self) -> list[dict[str, Any]]:
         rpa_cfg = self.config.get("rpa84", {})
-        path = self.resolve_config_path(rpa_cfg.get("config_path", "config/rpa84_scenarios.json"))
-        data = load_json(path)
-        scenarios = data.get("scenarios", [])
+        scenarios = rpa_cfg.get("scenarios", [])
         if not isinstance(scenarios, list):
-            raise ValueError("RPA84 scenario config must contain a scenarios list")
+            raise ValueError("config.rpa84.scenarios must be a list")
         return [item for item in scenarios if isinstance(item, dict)]
 
     def scenario_selectors(self, step: dict[str, Any]) -> list[str]:
@@ -1321,7 +1315,11 @@ class TaiwanLifeMonitor:
 
 def send_email_alert(report: dict[str, Any], md_path: Path, json_path: Path, config: dict[str, Any], always: bool = False) -> bool:
     email_cfg = config.get("alerts", {}).get("email", {})
-    if not email_cfg.get("enabled", False):
+    email_enabled = bool(email_cfg.get("enabled", False))
+    env_email_enabled = truthy_env("ALERT_EMAIL_ENABLED")
+    if env_email_enabled is not None:
+        email_enabled = env_email_enabled
+    if not email_enabled:
         return False
     summary = report.get("summary", {})
     has_problem = int(summary.get("fail", 0)) > 0 or int(summary.get("warn", 0)) > 0
@@ -1378,7 +1376,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--config", default="config/taiwanlife.json", help="監控設定 JSON")
     parser.add_argument("--output-dir", default="reports", help="報表輸出資料夾")
     parser.add_argument("--scheduler", default=os.environ.get("MONITOR_SCHEDULER", "manual"), help="排程來源標籤，例如 windows-task-scheduler、power-automate、n8n")
-    parser.add_argument("--rpa84-config", default="", help="RPA84 場景設定 JSON，預設讀取 config 內的 rpa84.config_path")
     parser.add_argument("--enable-rpa84", action="store_true", help="啟用 RPA84 功能場景")
     parser.add_argument("--health-check", action="store_true", help="只輸出工具健康狀態，不執行巡檢")
     parser.add_argument("--email-on-fail", action="store_true", help="異常時透過 SMTP 寄送警示")
@@ -1403,9 +1400,7 @@ def main(argv: list[str] | None = None) -> int:
         config = load_json(config_path)
         config["_config_dir"] = str(config_path.resolve().parent)
         config["_runtime_scheduler"] = args.scheduler
-        if args.rpa84_config:
-            config.setdefault("rpa84", {})["config_path"] = args.rpa84_config
-        env_enable_rpa84 = os.environ.get("MONITOR_ENABLE_RPA84", "").lower() in {"1", "true", "yes", "on"}
+        env_enable_rpa84 = truthy_env("MONITOR_ENABLE_RPA84")
         if args.enable_rpa84 or env_enable_rpa84:
             config.setdefault("rpa84", {})["enabled"] = True
         monitor = TaiwanLifeMonitor(config, Path(args.output_dir))

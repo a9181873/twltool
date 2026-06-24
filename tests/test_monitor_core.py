@@ -163,14 +163,14 @@ class ConfigLoadingTests(unittest.TestCase):
 
     def test_rpa84_scenario_inventory_is_structured_and_default_off(self):
         config = load_json(ROOT / "config" / "taiwanlife.json")
-        scenarios = load_json(ROOT / "config" / "rpa84_scenarios.json")
+        scenarios = config["rpa84"]["scenarios"]
 
         self.assertFalse(config["rpa84"]["enabled"])
-        self.assertEqual(config["rpa84"]["config_path"], "config/rpa84_scenarios.json")
-        self.assertGreaterEqual(len(scenarios["scenarios"]), 20)
-        self.assertEqual(scenarios["scenarios"][0]["id"], "1-1-search-site")
-        self.assertTrue(scenarios["scenarios"][0]["enabled"])
-        self.assertIn("acceptance", scenarios["scenarios"][0])
+        self.assertNotIn("config_path", config["rpa84"])
+        self.assertGreaterEqual(len(scenarios), 20)
+        self.assertEqual(scenarios[0]["id"], "1-1-search-site")
+        self.assertTrue(scenarios[0]["enabled"])
+        self.assertIn("acceptance", scenarios[0])
 
     def test_ssl_hosts_falls_back_to_base_url(self):
         tmp, monitor = make_monitor({"ssl": {"enabled": True}})
@@ -369,6 +369,18 @@ class EmailGatingTests(unittest.TestCase):
         attachments = list(message.iter_attachments())
         self.assertEqual(len(attachments), 1)
         self.assertEqual(attachments[0].get_filename(), "report.json")
+
+    def test_alert_email_enabled_env_can_enable_smtp(self):
+        config = json.loads(json.dumps(self.enabled_email_config))
+        config["alerts"]["email"]["enabled"] = False
+        RecordingSMTP.instances = []
+
+        with patch.dict(os.environ, {"ALERT_EMAIL_ENABLED": "true"}):
+            with patch("taiwanlife_monitor.monitor.smtplib.SMTP", RecordingSMTP):
+                sent = send_email_alert(self.report_fail, self.md_path, self.json_path, config)
+
+        self.assertTrue(sent)
+        self.assertEqual(len(RecordingSMTP.instances), 1)
 
     def test_warn_only_report_sends_email_when_email_is_enabled(self):
         RecordingSMTP.instances = []

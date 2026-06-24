@@ -1,6 +1,6 @@
 # 台灣人壽官網巡檢工具
 
-這個資料夾已整理成可部署的巡檢專案：Python 負責實際檢查，n8n 負責排程與 Email 通知。主程式在 `taiwanlife_monitor/monitor.py`。
+這個資料夾已整理成可部署的巡檢專案：Python 負責實際檢查，排程可由 Windows Task Scheduler、Power Automate、n8n、Docker 或 cron 觸發。主程式在 `taiwanlife_monitor/monitor.py`。
 
 ## 監控內容
 
@@ -10,7 +10,8 @@
 - 內部連結抽查，預設最多 120 條
 - TLS 憑證到期天數
 - JSON 與 Markdown 報表，並保留截圖
-- SMTP Email 告警，也可交給 n8n Send Email 節點
+- SMTP Email 告警，也可由 Windows wrapper 轉送 Power Automate / Teams
+- RPA84 官網功能自動檢查需求清單與可逐步啟用的場景設定
 
 ## 技術與用途
 
@@ -26,9 +27,10 @@
 | JSON/Markdown | 報表格式 | 同時給機器讀、給人看 |
 | `scripts/taiwanlife_watchdog.sh` | 漏跑與異常檢查 | 發現巡檢沒跑、報表過舊、fail/warn |
 | Docker | 固定執行環境 | 降低部署環境差異 |
-| n8n | 排程與 Email 告警 | 自動判斷是否通知 |
+| n8n | 排程與執行 | 呼叫同一支 Python CLI，不負責寄信 |
 | Google Drive API | 截圖上傳 | 自動保存截圖到雲端資料夾 |
-| Power Automate / Teams | 未來通知方案 | 異常時自動發 Teams、Email 或工單 |
+| Windows Task Scheduler | 公司內部排程 | 定時啟動 PowerShell wrapper |
+| Power Automate / Teams | 通知與後續流程 | 異常時自動發 Teams、Email 或工單 |
 
 目前 `requirements.txt` 只列 Playwright。`scripts/upload_to_drive.py` 需要 Google API 套件，正式使用前要補依賴或改成 SharePoint/OneDrive。
 
@@ -49,10 +51,8 @@
 
 ## 後續優化方向
 
-- 補 Windows PowerShell wrapper，方便 Windows Task Scheduler 執行。
-- 通知改接 Power Automate / Teams。
+- 依正式官網 DOM 校準 RPA84 其餘 selector，逐步打開更多功能場景。
 - 報表與截圖改存 SharePoint/OneDrive。
-- stdout 補 `problem_checks`，讓通知直接列出異常明細。
 - Google Drive upload 補依賴，或改用 Microsoft Graph。
 - 搜尋檢查改成確認結果頁或結果列表，降低誤判。
 - 第三方追蹤像素錯誤改成 warn 或忽略，避免不必要 fail。
@@ -82,6 +82,27 @@ set +a
 ./venv/bin/python -m taiwanlife_monitor.monitor --config config/taiwanlife.json --output-dir reports --email-on-fail
 ```
 
+## RPA84 功能流程
+
+RPA84 需求已整理到 `config/rpa84_scenarios.json`。目前採用現有架構整合：
+
+- `monitor.py` 還是唯一巡檢核心。
+- `config/taiwanlife.json` 透過 `rpa84.config_path` 指向場景檔。
+- 預設 `rpa84.enabled=false`，避免 selector 尚未校準前在正式排程誤報。
+- 可用 CLI 或環境變數啟用：
+
+```bash
+python -m taiwanlife_monitor.monitor --config config/taiwanlife.json --output-dir reports --enable-rpa84
+```
+
+或：
+
+```bash
+MONITOR_ENABLE_RPA84=true python -m taiwanlife_monitor.monitor --config config/taiwanlife.json --output-dir reports
+```
+
+第一版先開啟「搜尋全站：醫療」場景，其餘商品、試算、查詢、收藏、匯出等流程已在設定檔中完成需求盤點，待正式環境以 headful Playwright 校準 selector 後逐項啟用。
+
 ## n8n 整合
 
 匯入 `n8n/taiwanlife-monitor.workflow.json`。流程是：
@@ -89,8 +110,9 @@ set +a
 1. Schedule Trigger 每 12 小時啟動。
 2. Execute Command 執行 Python 巡檢。
 3. Code 節點解析 Python stdout 最後一行 JSON。
-4. IF 節點判斷 `fail + warn > 0`。
-5. Send Email 透過 SMTP 寄送告警。
+4. 將摘要留在 n8n execution log。
+
+此 workflow 不使用 n8n Email 節點；通知建議交給 Python SMTP、Windows wrapper + Power Automate、Teams Workflows 或公司既有告警系統。
 
 n8n 官方文件指出 Execute Command 會在 n8n 所在主機執行；如果 n8n 跑在 Docker 裡，命令會在 n8n container 內執行，不會在 Docker host 上執行。因此正式部署有兩個建議：
 
@@ -111,6 +133,35 @@ docker compose run --rm taiwanlife-monitor
 
 ```bash
 docker compose up -d n8n
+```
+
+## Windows / Power Automate
+
+Windows Task Scheduler 建議只負責呼叫 wrapper：
+
+```powershell
+.\scripts\run_taiwanlife_monitor.ps1
+```
+
+需要啟用 RPA84：
+
+```powershell
+.\scripts\run_taiwanlife_monitor.ps1 -EnableRpa84
+```
+
+若要由 Power Automate / Teams Workflows 通知，在環境變數設定：
+
+```powershell
+$env:POWER_AUTOMATE_WEBHOOK_URL="https://..."
+.\scripts\run_taiwanlife_monitor.ps1
+```
+
+wrapper 只會在 `fail > 0` 或 `warn > 0` 時 POST 最新 stdout payload，payload 內含 `summary`、`problem_checks`、`latest_json`、`latest_md`、`screenshots`。
+
+可用下列腳本建立 Windows 排程：
+
+```powershell
+.\scripts\register_windows_task.ps1 -TaskName TaiwanLifeWebsiteMonitor -HoursInterval 12
 ```
 
 ## 報表位置

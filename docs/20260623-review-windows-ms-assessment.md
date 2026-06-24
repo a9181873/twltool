@@ -1,5 +1,7 @@
 # twltool 程式審查、截圖封存與 Windows/Microsoft 部署評估
 
+> 歷史文件：此文件保留 2026-06-23 當時的審查結論。最新排程/通知分工請以 `docs/scheduler-integration.md`、`docs/deployment.md`、`docs/go-live-checklist.md` 為準；RPA84 需求對照請看 `docs/rpa84-requirements.md`。
+
 審查日期：2026-06-23  
 Git 版本：`0896198`  
 範圍：`a9181873/twltool` 最新 `main`

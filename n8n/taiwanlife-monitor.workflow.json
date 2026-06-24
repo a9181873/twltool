@@ -1,5 +1,5 @@
 {
-  "name": "台灣人壽官網巡檢告警",
+  "name": "台灣人壽官網巡檢排程",
   "nodes": [
     {
       "parameters": {
@@ -23,7 +23,7 @@
     },
     {
       "parameters": {
-        "command": "set -e\ncd \"${MONITOR_WORKDIR:-/opt/taiwanlife-monitor}\"\n\"${MONITOR_PYTHON_BIN:-python}\" -m taiwanlife_monitor.monitor --config \"${MONITOR_CONFIG:-config/taiwanlife.json}\" --output-dir \"${MONITOR_OUTPUT_DIR:-reports}\""
+        "command": "set -e\ncd \"${MONITOR_WORKDIR:-/opt/taiwanlife-monitor}\"\n\"${MONITOR_PYTHON_BIN:-python}\" -m taiwanlife_monitor.monitor --config \"${MONITOR_CONFIG:-config/taiwanlife.json}\" --output-dir \"${MONITOR_OUTPUT_DIR:-reports}\" --scheduler n8n --fail-exit-code"
       },
       "id": "RunPythonMonitor",
       "name": "執行 Python 巡檢",
@@ -35,11 +35,11 @@
       ],
       "alwaysOutputData": true,
       "continueOnFail": true,
-      "notes": "Docker 版 n8n 內通常沒有 host 的 Python venv；若 Execute Command 被限制，請照 n8n/README.md 改用 SSH node 呼叫巡檢主機。"
+      "notes": "此 workflow 只負責排程與執行，不使用 n8n Email 節點。正式 Docker n8n 建議改用 SSH node 呼叫巡檢主機。"
     },
     {
       "parameters": {
-        "jsCode": "const stdout = String($json.stdout ?? '');\nconst stderr = String($json.stderr ?? '');\nconst rawExit = $json.exitCode ?? $json.code;\nconst exitCode = rawExit === undefined || rawExit === null || rawExit === '' ? 0 : Number(rawExit);\nconst commandError = String($json.error?.message ?? $json.error ?? $json.message ?? '');\nconst lines = stdout.trim().split(/\\r?\\n/).map((line) => line.trim()).filter(Boolean);\nlet parsed = null;\nfor (let i = lines.length - 1; i >= 0; i--) {\n  try {\n    const candidate = JSON.parse(lines[i]);\n    if (candidate && typeof candidate === 'object') {\n      parsed = candidate;\n      break;\n    }\n  } catch (error) {}\n}\nconst toInt = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;\nconst tail = (value, max = 2500) => {\n  const text = String(value ?? '');\n  return text.length > max ? text.slice(text.length - max) : text;\n};\nlet payload;\nlet parseError = '';\nif (parsed) {\n  const summary = parsed.summary || {\n    total: toInt(parsed.total),\n    pass: toInt(parsed.pass),\n    warn: toInt(parsed.warn),\n    fail: toInt(parsed.fail),\n  };\n  const parsedOk = parsed.ok === undefined ? toInt(summary.fail) === 0 : parsed.ok === true;\n  payload = {\n    ok: parsedOk && toInt(summary.fail) === 0,\n    run_id: parsed.run_id || '',\n    target_name: parsed.target_name || '台灣人壽官網',\n    summary,\n    latest_json: parsed.latest_json || parsed.json || '',\n    latest_md: parsed.latest_md || '',\n    email_sent: parsed.email_sent || false,\n    summary_text: parsed.summary_text || `PASS=${summary.pass} WARN=${summary.warn} FAIL=${summary.fail}`,\n  };\n} else {\n  parseError = 'Python stdout 最後幾行找不到可解析的 JSON payload';\n  payload = {\n    ok: false,\n    run_id: '',\n    target_name: '台灣人壽官網',\n    summary: { total: 0, pass: 0, warn: 0, fail: 1 },\n    latest_json: '',\n    latest_md: '',\n    email_sent: false,\n    summary_text: parseError,\n  };\n}\nconst failCount = toInt(payload.summary.fail);\nconst warnCount = toInt(payload.summary.warn);\nconst nonZeroExit = Number.isFinite(exitCode) && exitCode !== 0;\nconst shouldAlert = !payload.ok || failCount > 0 || warnCount > 0 || nonZeroExit || commandError.length > 0 || Boolean(parseError);\nconst problemChecks = Array.isArray(parsed?.checks) ? parsed.checks.filter((check) => check.status !== 'pass').slice(0, 10) : [];\nconst checkText = problemChecks.map((check) => `- [${check.status}] ${check.id || ''} ${check.name || ''}: ${check.detail || ''}`).join('\\n');\nconst diagnosticText = [\n  parseError ? `解析錯誤：${parseError}` : '',\n  nonZeroExit ? `Exit code：${exitCode}` : '',\n  commandError ? `Command error：${commandError}` : '',\n  stderr ? `stderr tail:\\n${tail(stderr)}` : '',\n  !parsed && stdout ? `stdout tail:\\n${tail(stdout)}` : '',\n].filter(Boolean).join('\\n\\n');\nconst emailSubject = `[台壽官網巡檢] ${shouldAlert ? '異常' : '正常'} fail=${failCount} warn=${warnCount}`;\nconst emailText = [\n  `${payload.target_name}巡檢${shouldAlert ? '異常' : '結果'}`,\n  payload.summary_text,\n  `Run ID：${payload.run_id || '(無)'}`,\n  `JSON：${payload.latest_json || '(未產生)'}`,\n  `Markdown：${payload.latest_md || '(未產生)'}`,\n  checkText ? `異常明細:\\n${checkText}` : '',\n  diagnosticText,\n  '請登入巡檢主機查看完整報告與截圖。',\n].filter(Boolean).join('\\n\\n');\nreturn [{\n  json: {\n    ...payload,\n    should_alert: shouldAlert,\n    alert_score: shouldAlert ? 1 : 0,\n    command_exit_code: Number.isFinite(exitCode) ? exitCode : null,\n    command_error: commandError,\n    parse_error: parseError,\n    stdout_tail: tail(stdout),\n    stderr_tail: tail(stderr),\n    email_subject: emailSubject,\n    email_text: emailText,\n  },\n}];"
+        "jsCode": "const stdout = String($json.stdout ?? '');\nconst stderr = String($json.stderr ?? '');\nconst rawExit = $json.exitCode ?? $json.code;\nconst exitCode = rawExit === undefined || rawExit === null || rawExit === '' ? 0 : Number(rawExit);\nconst commandError = String($json.error?.message ?? $json.error ?? $json.message ?? '');\nconst lines = stdout.trim().split(/\\r?\\n/).map((line) => line.trim()).filter(Boolean);\nlet parsed = null;\nfor (let i = lines.length - 1; i >= 0; i--) {\n  try {\n    const candidate = JSON.parse(lines[i]);\n    if (candidate && typeof candidate === 'object') {\n      parsed = candidate;\n      break;\n    }\n  } catch (error) {}\n}\nconst toInt = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;\nconst tail = (value, max = 2500) => {\n  const text = String(value ?? '');\n  return text.length > max ? text.slice(text.length - max) : text;\n};\nconst fallback = {\n  ok: false,\n  run_id: '',\n  target_name: '台灣人壽官網',\n  scheduler: 'n8n',\n  summary: { total: 0, pass: 0, warn: 0, fail: 1 },\n  problem_checks: [{ id: 'n8n-parse', name: 'n8n 解析 stdout', status: 'fail', detail: 'Python stdout 最後幾行找不到 JSON payload' }],\n  latest_json: '',\n  latest_md: '',\n  screenshots: [],\n  email_sent: false,\n  summary_text: 'Python stdout 最後幾行找不到 JSON payload',\n};\nconst payload = parsed || fallback;\nconst failCount = toInt(payload.summary?.fail);\nconst warnCount = toInt(payload.summary?.warn);\nconst nonZeroExit = Number.isFinite(exitCode) && exitCode !== 0;\nconst hasProblem = !payload.ok || failCount > 0 || warnCount > 0 || nonZeroExit || commandError.length > 0 || !parsed;\nreturn [{\n  json: {\n    ...payload,\n    should_notify_external: hasProblem,\n    alert_score: hasProblem ? 1 : 0,\n    command_exit_code: Number.isFinite(exitCode) ? exitCode : null,\n    command_error: commandError,\n    stdout_tail: tail(stdout),\n    stderr_tail: tail(stderr),\n  },\n}];"
       },
       "id": "ParseMonitorJson",
       "name": "解析巡檢 stdout",
@@ -48,49 +48,8 @@
       "position": [
         -80,
         0
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "number": [
-            {
-              "leftValue": "={{$json.alert_score}}",
-              "operation": "larger",
-              "rightValue": 0
-            }
-          ]
-        }
-      },
-      "id": "HasProblem",
-      "name": "是否需要告警",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        180,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "fromEmail": "={{$env.ALERT_FROM}}",
-        "toEmail": "={{$env.ALERT_TO}}",
-        "subject": "={{$json.email_subject}}",
-        "emailFormat": "text",
-        "text": "={{$json.email_text}}",
-        "options": {
-          "appendAttribution": false
-        }
-      },
-      "id": "SendEmail",
-      "name": "寄送 Email 告警",
-      "type": "n8n-nodes-base.emailSend",
-      "typeVersion": 2.1,
-      "position": [
-        460,
-        -120
       ],
-      "notes": "SMTP host/user/password 請用 n8n credential 或環境變數建立，不要把密碼匯出到 workflow JSON。"
+      "notes": "輸出 should_notify_external 供外部通知層使用；本 workflow 不寄信。"
     }
   ],
   "connections": {
@@ -115,28 +74,6 @@
           }
         ]
       ]
-    },
-    "解析巡檢 stdout": {
-      "main": [
-        [
-          {
-            "node": "是否需要告警",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "是否需要告警": {
-      "main": [
-        [
-          {
-            "node": "寄送 Email 告警",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
     }
   },
   "settings": {
@@ -144,5 +81,5 @@
     "executionTimeout": 900
   },
   "active": false,
-  "versionId": "taiwanlife-monitor-template"
+  "versionId": "taiwanlife-monitor-run-only"
 }

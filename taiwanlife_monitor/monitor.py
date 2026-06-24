@@ -152,6 +152,29 @@ def unique_items(values: list[str]) -> list[str]:
     return result
 
 
+def problem_checks_from_report(report: dict[str, Any], limit: int = 10) -> list[dict[str, Any]]:
+    problems: list[dict[str, Any]] = []
+    for item in report.get("checks", []):
+        if item.get("status") == "pass":
+            continue
+        problem = {
+            "id": item.get("id", ""),
+            "name": item.get("name", ""),
+            "status": item.get("status", ""),
+            "detail": item.get("detail", ""),
+        }
+        evidence = item.get("evidence") or {}
+        if isinstance(evidence, dict):
+            if evidence.get("url"):
+                problem["url"] = evidence["url"]
+            if evidence.get("screenshot"):
+                problem["screenshot"] = evidence["screenshot"]
+        problems.append(problem)
+        if len(problems) >= limit:
+            break
+    return problems
+
+
 def normalize_url(base_url: str, href: str) -> str | None:
     href = (href or "").strip()
     if not href or href.startswith(("#", "javascript:", "mailto:", "tel:", "sms:")):
@@ -678,6 +701,198 @@ class TaiwanLifeMonitor:
                 continue
         return None
 
+    def resolve_config_path(self, value: str) -> Path:
+        path = Path(value)
+        if path.is_absolute():
+            return path
+        config_dir = Path(self.config.get("_config_dir", "."))
+        candidates = [config_dir / path, config_dir.parent / path, Path.cwd() / path]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return Path.cwd() / path
+
+    def load_rpa84_scenarios(self) -> list[dict[str, Any]]:
+        rpa_cfg = self.config.get("rpa84", {})
+        path = self.resolve_config_path(rpa_cfg.get("config_path", "config/rpa84_scenarios.json"))
+        data = load_json(path)
+        scenarios = data.get("scenarios", [])
+        if not isinstance(scenarios, list):
+            raise ValueError("RPA84 scenario config must contain a scenarios list")
+        return [item for item in scenarios if isinstance(item, dict)]
+
+    def scenario_selectors(self, step: dict[str, Any]) -> list[str]:
+        selectors = step.get("selectors", [])
+        if isinstance(selectors, str):
+            return [selectors]
+        return [str(item) for item in selectors if item]
+
+    def run_scenario_step(
+        self,
+        page: Any,
+        scenario: dict[str, Any],
+        step: dict[str, Any],
+        evidence: dict[str, Any],
+    ) -> None:
+        action = step.get("action")
+        optional = bool(step.get("optional", False))
+        label = step.get("name") or action or "未命名步驟"
+        step_record: dict[str, Any] = {"name": label, "action": action}
+        evidence.setdefault("steps", []).append(step_record)
+
+        try:
+            if action == "goto":
+                url = step.get("url") or urljoin(self.base_url, step.get("path", "/"))
+                step_record["url"] = sanitize_url(url)
+                self.retry_call(
+                    f"RPA84 {scenario.get('id')} 開頁",
+                    lambda: page.goto(url, wait_until=step.get("wait_until", "domcontentloaded"), timeout=self.timeout_ms),
+                )
+            elif action == "wait_for_load_state":
+                page.wait_for_load_state(step.get("state", "networkidle"), timeout=int(step.get("timeout_ms", 15000)))
+            elif action == "wait":
+                page.wait_for_timeout(int(step.get("milliseconds", 1000)))
+            elif action in {"click_first", "fill_first", "press_first"}:
+                selectors = self.scenario_selectors(step)
+                locator = self.find_first_visible(page, selectors, int(step.get("timeout_ms", 3500)))
+                if not locator:
+                    raise LookupError(f"找不到可操作元素：{', '.join(selectors)}")
+                step_record["selector_count"] = len(selectors)
+                if action == "click_first":
+                    locator.click(timeout=int(step.get("click_timeout_ms", 5000)))
+                elif action == "fill_first":
+                    locator.fill(str(step.get("value", "")))
+                else:
+                    locator.press(str(step.get("key", "Enter")))
+            elif action == "assert_any_text":
+                texts = [str(item) for item in step.get("texts", []) if item]
+                body_text = page.locator("body").inner_text(timeout=int(step.get("timeout_ms", 5000)))
+                title = page.title()
+                haystack = "\n".join([body_text, title, page.url])
+                matched = [text for text in texts if text in haystack]
+                step_record["matched"] = matched
+                if not matched:
+                    raise AssertionError("未看到任一預期文字：" + ", ".join(texts))
+            elif action == "assert_all_text":
+                texts = [str(item) for item in step.get("texts", []) if item]
+                body_text = page.locator("body").inner_text(timeout=int(step.get("timeout_ms", 5000)))
+                title = page.title()
+                haystack = "\n".join([body_text, title, page.url])
+                missing = [text for text in texts if text not in haystack]
+                step_record["missing"] = missing
+                if missing:
+                    raise AssertionError("缺少預期文字：" + ", ".join(missing))
+            elif action == "screenshot":
+                name = step.get("filename") or f"{self.run_id}_{safe_slug(str(scenario.get('id', 'rpa84')))}.png"
+                screenshot, screenshot_error = self.capture_screenshot(
+                    page,
+                    str(name),
+                    full_page=bool(step.get("full_page", False)),
+                )
+                if screenshot:
+                    step_record["screenshot"] = screenshot
+                    evidence["screenshot"] = screenshot
+                if screenshot_error:
+                    step_record["screenshot_error"] = screenshot_error
+                    raise RuntimeError("截圖失敗")
+            elif action == "manual_note":
+                step_record["note"] = step.get("note", "")
+            else:
+                raise ValueError(f"不支援的 RPA84 動作：{action}")
+            step_record["status"] = "pass"
+        except Exception as exc:
+            if optional:
+                step_record["status"] = "skip"
+                step_record["detail"] = compact_text(exc)
+                return
+            step_record["status"] = "fail"
+            step_record["detail"] = compact_text(exc)
+            raise
+
+    def run_rpa84_scenario(self, context: Any, scenario: dict[str, Any]) -> None:
+        start = time.monotonic()
+        scenario_id = str(scenario.get("id") or safe_slug(str(scenario.get("name", "rpa84"))))
+        name = str(scenario.get("name") or scenario_id)
+        evidence: dict[str, Any] = {
+            "scenario_id": scenario_id,
+            "group": scenario.get("group", ""),
+            "input": scenario.get("input", {}),
+            "acceptance": scenario.get("acceptance", []),
+            "side_effect": bool(scenario.get("side_effect", False)),
+        }
+        page = None
+        local_resources: list[dict[str, Any]] = []
+        try:
+            steps = scenario.get("steps", [])
+            if not steps:
+                self.add_check(
+                    f"rpa84-{safe_slug(scenario_id)}",
+                    f"RPA84：{name}",
+                    "warn",
+                    "已建立需求項目，但尚未設定自動化步驟",
+                    start,
+                    evidence,
+                )
+                return
+
+            page = context.new_page()
+            page.set_default_timeout(self.timeout_ms)
+            local_resources = self.attach_page_listeners(page, f"RPA84：{name}")
+            for step in steps:
+                self.run_scenario_step(page, scenario, step, evidence)
+
+            status = "pass"
+            detail = "流程完成並符合設定驗收條件"
+            if local_resources:
+                status = "fail"
+                detail += f"；流程中有壞掉物件 {len(local_resources)} 個"
+                evidence["broken_resources"] = local_resources[:10]
+            self.add_check(f"rpa84-{safe_slug(scenario_id)}", f"RPA84：{name}", status, detail, start, evidence)
+        except Exception as exc:
+            evidence.update(exception_evidence(exc))
+            if local_resources:
+                evidence["broken_resources"] = local_resources[:10]
+            self.add_check(
+                f"rpa84-{safe_slug(scenario_id)}",
+                f"RPA84：{name}",
+                "fail",
+                exception_detail(f"RPA84：{name}", exc),
+                start,
+                evidence,
+            )
+        finally:
+            self.close_quietly(page, f"rpa84-{scenario_id}")
+
+    def run_rpa84_scenarios(self, context: Any) -> None:
+        rpa_cfg = self.config.get("rpa84", {})
+        if not rpa_cfg.get("enabled", False):
+            return
+        start = time.monotonic()
+        try:
+            scenarios = self.load_rpa84_scenarios()
+        except Exception as exc:
+            self.add_check(
+                "rpa84-config",
+                "RPA84 場景設定",
+                "fail",
+                exception_detail("RPA84 場景設定", exc),
+                start,
+                exception_evidence(exc),
+            )
+            return
+
+        enabled = [item for item in scenarios if item.get("enabled", False)]
+        self.add_check(
+            "rpa84-inventory",
+            "RPA84 需求清單",
+            "pass" if enabled else "warn",
+            f"已載入 {len(scenarios)} 個需求項目，啟用 {len(enabled)} 個自動化場景",
+            start,
+            {"total": len(scenarios), "enabled": len(enabled)},
+        )
+        for scenario in enabled:
+            self.run_rpa84_scenario(context, scenario)
+
     def run_search_check(self, context: Any) -> None:
         search_cfg = self.config.get("search_check", {})
         if not search_cfg.get("enabled", True):
@@ -947,6 +1162,17 @@ class TaiwanLifeMonitor:
                             exception_evidence(exc),
                         )
                     try:
+                        self.run_rpa84_scenarios(context)
+                    except Exception as exc:
+                        self.add_check(
+                            "rpa84",
+                            "RPA84 功能流程",
+                            "fail",
+                            exception_detail("RPA84 功能流程", exc),
+                            start,
+                            exception_evidence(exc),
+                        )
+                    try:
                         self.run_link_crawl(context)
                     except Exception as exc:
                         self.add_check(
@@ -985,6 +1211,7 @@ class TaiwanLifeMonitor:
             "run_id": self.run_id,
             "target_name": self.config.get("target_name", "台灣人壽官網"),
             "base_url": self.base_url,
+            "scheduler": self.config.get("_runtime_scheduler", "manual"),
             "started_at": started_at.isoformat(),
             "finished_at": taipei_now().isoformat(),
             "duration_seconds": round(duration_seconds, 2),
@@ -1096,7 +1323,9 @@ def send_email_alert(report: dict[str, Any], md_path: Path, json_path: Path, con
     email_cfg = config.get("alerts", {}).get("email", {})
     if not email_cfg.get("enabled", False):
         return False
-    if report["ok"] and not always:
+    summary = report.get("summary", {})
+    has_problem = int(summary.get("fail", 0)) > 0 or int(summary.get("warn", 0)) > 0
+    if not has_problem and not always:
         return False
 
     host = env_or_value(email_cfg.get("host"), email_cfg.get("host_env"), "localhost")
@@ -1109,11 +1338,15 @@ def send_email_alert(report: dict[str, Any], md_path: Path, json_path: Path, con
     if not sender or not recipients:
         raise ValueError("Email alert needs sender and recipients. Check ALERT_FROM and ALERT_TO.")
 
-    status_label = "OK" if report["ok"] else "FAIL"
+    status_label = "OK"
+    if int(summary.get("fail", 0)) > 0:
+        status_label = "FAIL"
+    elif int(summary.get("warn", 0)) > 0:
+        status_label = "WARN"
     subject_prefix = email_cfg.get("subject_prefix", "[台壽官網巡檢]")
     subject = (
         f"{subject_prefix} {status_label} "
-        f"fail={report['summary']['fail']} warn={report['summary']['warn']}"
+        f"fail={summary.get('fail', 0)} warn={summary.get('warn', 0)}"
     )
     markdown = md_path.read_text(encoding="utf-8")
 
@@ -1144,6 +1377,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="台灣人壽官網自動巡檢工具")
     parser.add_argument("--config", default="config/taiwanlife.json", help="監控設定 JSON")
     parser.add_argument("--output-dir", default="reports", help="報表輸出資料夾")
+    parser.add_argument("--scheduler", default=os.environ.get("MONITOR_SCHEDULER", "manual"), help="排程來源標籤，例如 windows-task-scheduler、power-automate、n8n")
+    parser.add_argument("--rpa84-config", default="", help="RPA84 場景設定 JSON，預設讀取 config 內的 rpa84.config_path")
+    parser.add_argument("--enable-rpa84", action="store_true", help="啟用 RPA84 功能場景")
     parser.add_argument("--health-check", action="store_true", help="只輸出工具健康狀態，不執行巡檢")
     parser.add_argument("--email-on-fail", action="store_true", help="異常時透過 SMTP 寄送警示")
     parser.add_argument("--always-email", action="store_true", help="不論成功或失敗都寄送 Email")
@@ -1165,6 +1401,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         config_path = Path(args.config)
         config = load_json(config_path)
+        config["_config_dir"] = str(config_path.resolve().parent)
+        config["_runtime_scheduler"] = args.scheduler
+        if args.rpa84_config:
+            config.setdefault("rpa84", {})["config_path"] = args.rpa84_config
+        env_enable_rpa84 = os.environ.get("MONITOR_ENABLE_RPA84", "").lower() in {"1", "true", "yes", "on"}
+        if args.enable_rpa84 or env_enable_rpa84:
+            config.setdefault("rpa84", {})["enabled"] = True
         monitor = TaiwanLifeMonitor(config, Path(args.output_dir))
         report, json_path, md_path = monitor.run()
 
@@ -1180,9 +1423,12 @@ def main(argv: list[str] | None = None) -> int:
             "ok": report["ok"],
             "run_id": report["run_id"],
             "target_name": report["target_name"],
+            "scheduler": report.get("scheduler", args.scheduler),
             "summary": report["summary"],
+            "problem_checks": problem_checks_from_report(report),
             "latest_json": str(json_path),
             "latest_md": str(md_path),
+            "screenshots": report.get("screenshots", []),
             "email_sent": email_sent,
             "summary_text": (
                 f"{report['target_name']} {report['started_at']} "
@@ -1202,9 +1448,19 @@ def main(argv: list[str] | None = None) -> int:
             "ok": False,
             "run_id": now.strftime("%Y%m%d_%H%M%S"),
             "target_name": "台灣人壽官網",
+            "scheduler": args.scheduler,
             "summary": {"total": 1, "pass": 0, "warn": 0, "fail": 1},
+            "problem_checks": [
+                {
+                    "id": "runtime",
+                    "name": "巡檢執行",
+                    "status": "fail",
+                    "detail": error["error_message"],
+                }
+            ],
             "latest_json": "",
             "latest_md": "",
+            "screenshots": [],
             "email_sent": False,
             "error": error,
             "summary_text": f"台灣人壽官網 {now.isoformat()} PASS=0 WARN=0 FAIL=1",

@@ -10,8 +10,10 @@ services:
     environment:
       TZ: ${TZ:-Asia/Taipei}
       PYTHONUNBUFFERED: "1"
+      MONITOR_SCHEDULER: ${MONITOR_SCHEDULER:-docker-compose}
+      MONITOR_ENABLE_RPA84: ${MONITOR_ENABLE_RPA84:-false}
     volumes:
-      - ./config/taiwanlife.json:/app/config/taiwanlife.json:ro
+      - ./config:/app/config:ro
       - ./reports:/app/reports
     shm_size: ${MONITOR_SHM_SIZE:-2gb}
     tmpfs:
@@ -57,6 +59,7 @@ services:
       MONITOR_PYTHON_BIN: ${MONITOR_PYTHON_BIN:-python}
       MONITOR_CONFIG: ${MONITOR_CONFIG:-config/taiwanlife.json}
       MONITOR_OUTPUT_DIR: ${MONITOR_OUTPUT_DIR:-reports}
+      MONITOR_ENABLE_RPA84: ${MONITOR_ENABLE_RPA84:-false}
     volumes:
       - n8n_data:/home/node/.n8n
       - ./n8n:/opt/n8n-workflows:ro

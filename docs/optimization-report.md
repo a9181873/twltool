@@ -1,5 +1,7 @@
 # 台灣人壽官網巡檢工具 - 優化建議報告
 
+> 歷史文件：此文件保留早期優化建議與處理狀態。最新排程/通知分工請以 `docs/scheduler-integration.md`、`docs/deployment.md`、`docs/go-live-checklist.md` 為準；RPA84 需求對照請看 `docs/rpa84-requirements.md`。
+
 > **報告版本**：v1.0  
 > **審查日期**：2026-06-19  
 > **審查範圍**：完整代碼庫、配置、部署、測試、文件

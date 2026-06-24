@@ -2,23 +2,26 @@
 
 ## 目標
 
-建立公司內部可維運的 synthetic monitoring 工具，定期從指定主機模擬真實瀏覽器使用台灣人壽官網，發現網頁失效、物件壞掉、搜尋異常、TLS 憑證即將到期等問題時立即 Email 告警。
+建立公司內部可維運的 synthetic monitoring 與 RPA84 官網功能自動檢查工具，定期從指定主機模擬真實瀏覽器使用台灣人壽官網，發現網頁失效、物件壞掉、搜尋異常、TLS 憑證即將到期或 RPA84 功能流程異常時，產出報表並交給組織既有通知層處理。
 
 ## 建議架構
 
 ```text
 n8n Schedule Trigger
-  -> Execute Command 或 SSH Node
+  或 Windows Task Scheduler
+  或 Power Automate / cron / Docker
+  -> 呼叫同一支 Python CLI
   -> Python Playwright 巡檢器
   -> JSON/Markdown/截圖報表
-  -> IF 判斷 fail/warn
-  -> Send Email SMTP 告警
+  -> stdout JSON payload
+  -> Python SMTP 或 Power Automate / Teams / 既有告警系統
 ```
 
-第一版建議先採「Python 巡檢器 + n8n 排程告警」：
+建議採「Python 巡檢核心 + 可替換排程/通知層」：
 
-- Python 負責瀏覽器自動化、資源錯誤擷取、連結抽查與報表。
-- n8n 負責排程、條件判斷、Email、後續串 Teams/LINE/工單。
+- Python 負責瀏覽器自動化、資源錯誤擷取、連結抽查、RPA84 場景與報表。
+- Windows Task Scheduler、n8n、Docker 或 cron 只負責觸發同一支 CLI。
+- Power Automate / Teams / SMTP / ITSM 負責通知與後續流程。
 - 報表落地保存，方便事故追查與誤報調校。
 
 ## 檢查層級
@@ -42,22 +45,27 @@ n8n Schedule Trigger
 - 抽查內部連結，避免首頁或重要子頁連到 404/500。
 - 截圖保存，讓值班人員快速判斷是網站問題、WAF 問題或巡檢主機問題。
 
+### L4 RPA84 業務流程
+
+- RPA84 需求放在 `config/rpa84_scenarios.json`。
+- 預設只啟用低風險的全站搜尋場景，其餘商品、試算、查詢、收藏、匯出流程先待 selector 校準。
+- 每個場景沿用既有檢查明細、evidence、截圖與 stdout `problem_checks`。
+
 ## 部署模式
 
-### 模式 A：n8n 與巡檢器同主機
+### 模式 A：Windows Task Scheduler + Power Automate
 
-適合小型第一版。n8n 使用 Execute Command：
+正式公司內部環境優先建議。Windows Task Scheduler 呼叫 PowerShell wrapper：
 
-```bash
-cd /opt/taiwanlife-monitor
-./venv/bin/python -m taiwanlife_monitor.monitor --config config/taiwanlife.json --output-dir reports
+```powershell
+.\scripts\run_taiwanlife_monitor.ps1
 ```
 
-優點是簡單；缺點是 n8n 主機需要安裝 Python、Playwright 與 Chromium。
+若設定 `POWER_AUTOMATE_WEBHOOK_URL`，wrapper 會在 `fail > 0` 或 `warn > 0` 時 POST 巡檢摘要到 Power Automate。
 
 ### 模式 B：n8n 透過 SSH 呼叫巡檢主機
 
-正式環境較建議此模式。n8n 不直接具備瀏覽器與 shell 權限，只透過受限 SSH key 呼叫巡檢主機上的固定腳本。
+若組織已有 n8n，建議只用 n8n 排程與執行。n8n 不寄信，且 Docker 版 n8n 不直接跑 host Python；正式環境以 SSH node 呼叫巡檢主機上的固定腳本。
 
 優點是權限隔離較好；缺點是多一台巡檢主機要維護。
 
@@ -75,9 +83,9 @@ docker run --rm --env-file .env -v /opt/taiwanlife-monitor/reports:/app/reports 
 
 第一版：
 
-- `fail > 0` 立即寄信。
-- `warn > 0` 可先寄給維運群組，觀察一週後調整。
-- Email 內容放摘要、報表路徑、截圖路徑，不在信件內塞大量原始 log。
+- `fail > 0` 或 `warn > 0` 都要通知。
+- 通知內容使用 stdout payload 的 `summary`、`problem_checks`、`latest_json`、`latest_md`、`screenshots`。
+- n8n workflow 預設不寄信；通知由 Python SMTP、Windows wrapper + Power Automate 或公司既有告警系統處理。
 
 第二版：
 
@@ -96,9 +104,9 @@ docker run --rm --env-file .env -v /opt/taiwanlife-monitor/reports:/app/reports 
 
 ## 正式上線最低需求
 
-- 一組專用 Linux 服務帳號，例如 `site-monitor`。
+- 一組專用服務帳號，例如 Windows `site-monitor` 或 Linux `site-monitor`。
 - 只允許該帳號讀寫巡檢資料夾與報表資料夾。
-- SMTP 憑證放環境變數、Vault 或 n8n credential，不寫入 Git。
+- SMTP、Power Automate webhook、SSH 私鑰等敏感資訊放環境變數、Vault 或平台 credential，不寫入 Git。
 - n8n 啟用 workflow 權限控管與 2FA。
 - 巡檢頻率預設每 12 小時一次，避免對官網造成額外壓力。
 - 第一週每日檢查誤報，調整 selectors、timeout 與忽略清單。
@@ -106,5 +114,5 @@ docker run --rm --env-file .env -v /opt/taiwanlife-monitor/reports:/app/reports 
 ## 已參考資訊
 
 - 台灣人壽官網首頁目前可見四大主導覽、商品快搜、熱門活動、最新消息與頁尾關鍵連結。
-- n8n 官方文件：Schedule Trigger 可依固定間隔或 Cron 執行 workflow；Send Email 使用 SMTP 寄送；Execute Command 在 n8n 2.0 起預設停用，且在 Docker 內會執行於 n8n container。
+- n8n 官方文件：Schedule Trigger 可依固定間隔或 Cron 執行 workflow；Execute Command 在 Docker 內會執行於 n8n container。
 - Playwright 官方文件：支援 Chromium/WebKit/Firefox，適合端對端測試與一般瀏覽器自動化。

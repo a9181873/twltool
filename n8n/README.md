@@ -1,10 +1,11 @@
-# n8n 部署整合說明
+# n8n 排程整合說明
 
 ## workflow 範本
 
-- `taiwanlife-monitor.workflow.json`：適用於 n8n 與 Python 巡檢程式在同一台主機，或自製 n8n image 已內建 Python、Playwright 與本專案程式碼的情境。
+- `taiwanlife-monitor.workflow.json`：只負責排程、執行與解析結果，不使用 n8n Email 節點。
+- 適用於 n8n 與 Python 巡檢程式在同一台主機，或自製 n8n image 已內建 Python、Playwright 與本專案程式碼的情境。
 - Docker Compose 會把本資料夾唯讀掛到 `/opt/n8n-workflows`，可在 n8n 匯入 workflow JSON。
-- SMTP 密碼、SSH 私鑰、n8n encryption key 都必須放在 `.env` 或 n8n credentials，不要寫進 workflow JSON。
+- SSH 私鑰、n8n encryption key 都必須放在 `.env` 或 n8n credentials，不要寫進 workflow JSON。
 
 ## Execute Command 模式
 
@@ -17,7 +18,9 @@ MONITOR_CONFIG=config/taiwanlife.json
 MONITOR_OUTPUT_DIR=reports
 ```
 
-命令執行後，Code 節點會從 Python stdout 最後幾行尋找 JSON payload，並把 `fail`、`warn`、`stderr`、非 0 exit code、stdout 無法解析等狀況轉成 Email 告警。
+命令執行後，Code 節點會從 Python stdout 最後幾行尋找 JSON payload，並輸出 `summary`、`problem_checks`、`latest_json`、`latest_md`、`screenshots` 與 `should_notify_external`。
+
+通知不放在 n8n workflow 內。建議由 Windows wrapper + Power Automate、Python SMTP、Teams Workflows 或公司既有告警系統處理。
 
 ## Docker n8n 建議
 
@@ -35,7 +38,7 @@ cd "${MONITOR_SSH_WORKDIR:-/opt/taiwanlife-monitor}"
 python -m taiwanlife_monitor.monitor --config config/taiwanlife.json --output-dir reports
 ```
 
-5. SSH node 的 stdout 輸出接回「解析巡檢 stdout」節點；後續 IF 與 Email 節點可沿用。
+5. SSH node 的 stdout 輸出接回「解析巡檢 stdout」節點。
 
 若巡檢主機用容器執行，SSH 遠端命令可改成：
 
@@ -44,13 +47,6 @@ cd "${MONITOR_SSH_WORKDIR:-/opt/taiwanlife-monitor}"
 docker compose run --rm taiwanlife-monitor
 ```
 
-## Email 設定
+## 外部通知
 
-Email 節點的寄件人與收件人會讀取：
-
-```bash
-ALERT_FROM=monitor@example.com
-ALERT_TO=web-admin@example.com,ops@example.com
-```
-
-SMTP host、port、帳號、密碼請在 n8n SMTP credential 內設定；也可以用 n8n credential expression 讀取 `.env` 的 `SMTP_HOST`、`SMTP_PORT`、`SMTP_USER`、`SMTP_PASSWORD`。
+n8n 只執行巡檢，不寄送通知。若公司仍想讓 n8n 串 Teams 或工單，建議在解析節點後新增專用節點讀取 `should_notify_external`，但不要使用 SMTP 密碼或收件人清單硬寫在 workflow JSON。

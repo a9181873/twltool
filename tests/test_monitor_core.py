@@ -16,6 +16,7 @@ from taiwanlife_monitor.monitor import (
     load_json,
     main,
     normalize_url,
+    problem_checks_from_report,
     safe_slug,
     send_email_alert,
     split_emails,
@@ -160,6 +161,17 @@ class ConfigLoadingTests(unittest.TestCase):
                 ],
             )
 
+    def test_rpa84_scenario_inventory_is_structured_and_default_off(self):
+        config = load_json(ROOT / "config" / "taiwanlife.json")
+        scenarios = load_json(ROOT / "config" / "rpa84_scenarios.json")
+
+        self.assertFalse(config["rpa84"]["enabled"])
+        self.assertEqual(config["rpa84"]["config_path"], "config/rpa84_scenarios.json")
+        self.assertGreaterEqual(len(scenarios["scenarios"]), 20)
+        self.assertEqual(scenarios["scenarios"][0]["id"], "1-1-search-site")
+        self.assertTrue(scenarios["scenarios"][0]["enabled"])
+        self.assertIn("acceptance", scenarios["scenarios"][0])
+
     def test_ssl_hosts_falls_back_to_base_url(self):
         tmp, monitor = make_monitor({"ssl": {"enabled": True}})
         self.addCleanup(tmp.cleanup)
@@ -256,6 +268,27 @@ class ReportRegressionTests(unittest.TestCase):
         self.assertIn("## 異常連結", markdown)
         self.assertIn("## 截圖", markdown)
 
+    def test_problem_checks_from_report_extracts_notification_summary(self):
+        report = {
+            "checks": [
+                {"id": "ok", "name": "正常", "status": "pass", "detail": "OK"},
+                {
+                    "id": "warn",
+                    "name": "警告",
+                    "status": "warn",
+                    "detail": "WARN",
+                    "evidence": {"url": "https://example.com", "screenshot": "reports/screenshots/warn.png"},
+                },
+                {"id": "fail", "name": "失敗", "status": "fail", "detail": "FAIL"},
+            ]
+        }
+
+        problems = problem_checks_from_report(report)
+
+        self.assertEqual([item["id"] for item in problems], ["warn", "fail"])
+        self.assertEqual(problems[0]["url"], "https://example.com")
+        self.assertEqual(problems[0]["screenshot"], "reports/screenshots/warn.png")
+
 
 class EmailGatingTests(unittest.TestCase):
     def setUp(self):
@@ -272,6 +305,10 @@ class EmailGatingTests(unittest.TestCase):
         self.report_fail = {
             "ok": False,
             "summary": {"fail": 1, "warn": 0},
+        }
+        self.report_warn = {
+            "ok": True,
+            "summary": {"fail": 0, "warn": 1},
         }
         self.enabled_email_config = {
             "alerts": {
@@ -332,6 +369,20 @@ class EmailGatingTests(unittest.TestCase):
         attachments = list(message.iter_attachments())
         self.assertEqual(len(attachments), 1)
         self.assertEqual(attachments[0].get_filename(), "report.json")
+
+    def test_warn_only_report_sends_email_when_email_is_enabled(self):
+        RecordingSMTP.instances = []
+        with patch("taiwanlife_monitor.monitor.smtplib.SMTP", RecordingSMTP):
+            sent = send_email_alert(
+                self.report_warn,
+                self.md_path,
+                self.json_path,
+                self.enabled_email_config,
+            )
+
+        self.assertTrue(sent)
+        message = RecordingSMTP.instances[0].sent_messages[0]
+        self.assertIn("[巡檢] WARN fail=0 warn=1", message["Subject"])
 
     def test_email_requires_sender_and_recipient_when_it_would_send(self):
         bad_config = {

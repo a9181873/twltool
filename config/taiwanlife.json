@@ -171,6 +171,10 @@
       "壽險保障"
     ]
   },
+  "rpa84": {
+    "enabled": false,
+    "config_path": "config/rpa84_scenarios.json"
+  },
   "link_crawl": {
     "enabled": true,
     "max_links": 120,

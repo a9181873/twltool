@@ -1,0 +1,440 @@
+{
+  "schema_version": "1.0",
+  "source_document": "RPA流程步驟文件_數經部_官網功能自動檢查_V3.docx",
+  "scenario_set": "RPA84 官網功能自動檢查",
+  "notes": [
+    "enabled=false 的項目已完成需求盤點，但仍需用正式環境校準 selector 後再打開。",
+    "有寄信、收藏、匯出、下載等副作用的流程須先確認測試帳號、測試收件人與清理規則。"
+  ],
+  "scenarios": [
+    {
+      "id": "1-1-search-site",
+      "group": "搜尋",
+      "name": "搜尋全站",
+      "enabled": true,
+      "input": {
+        "keyword": "醫療"
+      },
+      "acceptance": [
+        "產生搜尋結果",
+        "搜尋結果不為 0 或頁面出現搜尋結果文字"
+      ],
+      "exception": [
+        "無搜尋結果時產出 log 並通知"
+      ],
+      "steps": [
+        {
+          "action": "goto",
+          "path": "/",
+          "name": "開啟官網首頁"
+        },
+        {
+          "action": "click_first",
+          "name": "開啟全站搜尋",
+          "optional": true,
+          "selectors": [
+            "[data-testid='search-trigger']",
+            "[aria-label*='搜尋']",
+            "button[aria-expanded='false'][aria-haspopup='dialog']",
+            "a[href*='search']",
+            "a[hint*='搜尋']",
+            "button[hint*='搜尋']",
+            "text=搜尋全站",
+            "text=搜尋"
+          ]
+        },
+        {
+          "action": "fill_first",
+          "name": "輸入搜尋關鍵字",
+          "value": "醫療",
+          "selectors": [
+            "input[placeholder*='搜尋']",
+            "input[type='search']",
+            "input[type='text']",
+            "input:not([type])"
+          ]
+        },
+        {
+          "action": "press_first",
+          "name": "送出搜尋",
+          "key": "Enter",
+          "selectors": [
+            "input[placeholder*='搜尋']",
+            "input[type='search']",
+            "input[type='text']",
+            "input:not([type])"
+          ]
+        },
+        {
+          "action": "wait_for_load_state",
+          "name": "等待搜尋結果",
+          "state": "networkidle",
+          "timeout_ms": 15000,
+          "optional": true
+        },
+        {
+          "action": "assert_any_text",
+          "name": "確認搜尋結果",
+          "texts": [
+            "醫療",
+            "搜尋結果",
+            "商品項目"
+          ]
+        },
+        {
+          "action": "screenshot",
+          "name": "搜尋結果截圖"
+        }
+      ]
+    },
+    {
+      "id": "1-2-product-quick-search",
+      "group": "搜尋",
+      "name": "產品快搜",
+      "enabled": false,
+      "input": {
+        "keyword": "台灣人壽"
+      },
+      "acceptance": [
+        "商品快搜產生搜尋結果",
+        "搜尋結果不為 0"
+      ],
+      "exception": [
+        "無搜尋結果時產出 log 並通知"
+      ]
+    },
+    {
+      "id": "2-1-activity-search",
+      "group": "搜尋",
+      "name": "熱門活動搜尋",
+      "enabled": false,
+      "input": {
+        "keyword": "台灣人壽"
+      },
+      "acceptance": [
+        "更多活動頁面可搜尋",
+        "產生搜尋結果且不為 0"
+      ],
+      "exception": [
+        "無搜尋結果時產出 log 並通知"
+      ]
+    },
+    {
+      "id": "3-1-product-search",
+      "group": "商品資訊",
+      "name": "商品搜尋",
+      "enabled": false,
+      "input": {
+        "category": "壽險保障",
+        "keyword": "台灣人壽"
+      },
+      "acceptance": [
+        "固定進入壽險保障第一項",
+        "輸入台灣人壽後產生搜尋結果"
+      ],
+      "exception": [
+        "無搜尋結果時產出 log 並通知"
+      ]
+    },
+    {
+      "id": "3-2-product-filter",
+      "group": "商品資訊",
+      "name": "商品篩選",
+      "enabled": false,
+      "input": {
+        "category": "定期壽險",
+        "filter": "身故金或喪葬費用"
+      },
+      "acceptance": [
+        "篩選條件可開啟",
+        "勾選固定條件後產生篩選結果"
+      ],
+      "exception": [
+        "無搜尋結果時產出 log 並通知"
+      ]
+    },
+    {
+      "id": "3-3-product-compare",
+      "group": "商品資訊",
+      "name": "商品比較",
+      "enabled": false,
+      "input": {
+        "compare_count": 2
+      },
+      "acceptance": [
+        "固定選擇前兩項商品可加入比較",
+        "比較頁面可開啟",
+        "取消加入後按鈕狀態與下方商品清單有變化"
+      ],
+      "exception": [
+        "無法加入商品比較或無法取消比較時產出 log 並通知"
+      ]
+    },
+    {
+      "id": "3-4-audio-intro",
+      "group": "商品資訊",
+      "name": "播放語音簡介",
+      "enabled": false,
+      "input": {
+        "product": "台灣人壽慈愛微型一年定期傷害保險"
+      },
+      "acceptance": [
+        "語音簡介視窗可開啟",
+        "播放功能可啟動",
+        "可暫停與關閉播放視窗"
+      ],
+      "exception": [
+        "無法跳出播放視窗、無法暫停、無法關閉時產出 log 並通知"
+      ]
+    },
+    {
+      "id": "3-5-travel-premium-calculator",
+      "group": "商品資訊",
+      "name": "旅平險保費試算",
+      "enabled": false,
+      "input": {
+        "destination": "國外",
+        "days": 5,
+        "age_range": "15足歲-65歲",
+        "death_disability": "100萬",
+        "injury_medical": "10萬",
+        "overseas_emergency": "10萬"
+      },
+      "acceptance": [
+        "可輸入試算條件",
+        "總保費有值",
+        "八項保障項目的保障金額有值"
+      ],
+      "exception": [
+        "無法輸入試算數值或無法產生試算結果時產出 log 並通知"
+      ]
+    },
+    {
+      "id": "4-1-claim-calculator",
+      "group": "保戶服務",
+      "name": "理賠試算",
+      "enabled": false,
+      "input": {
+        "product": "新住院醫療保險附約(85)HNRC",
+        "plan": "計畫一",
+        "surgery": "鼻部>鼻息肉切除術",
+        "hospital_days": 5,
+        "surgery_fee": 20000,
+        "room_fee": 10000,
+        "total_fee": 30000
+      },
+      "acceptance": [
+        "手術理賠金試算結果有值",
+        "完整醫療理賠試算結果有值"
+      ],
+      "exception": [
+        "無法選擇條件、無法輸入數值或無法產生結果時產出 log 並通知"
+      ]
+    },
+    {
+      "id": "4-2-hospital-search",
+      "group": "保戶服務",
+      "name": "特約醫院查詢",
+      "enabled": false,
+      "input": {
+        "city": "台北市",
+        "district": "中山區",
+        "exam_type": "一般體檢"
+      },
+      "acceptance": [
+        "特約體檢醫院查詢結果有值",
+        "癌症篩檢醫院查詢結果有值"
+      ],
+      "exception": [
+        "無法輸入查詢條件或無法產生查詢結果時產出 log 並通知"
+      ]
+    },
+    {
+      "id": "5-1-mortgage-calculator",
+      "group": "投資資訊",
+      "name": "房屋貸款試算",
+      "enabled": false,
+      "input": {
+        "loan_amount": "2000萬",
+        "years": 10,
+        "first_year_rate": "2.5%",
+        "second_year_rate": "3.5%"
+      },
+      "acceptance": [
+        "首年與第二年起試算結果有值"
+      ],
+      "exception": [
+        "無法輸入試算數值或無法產生試算結果時產出 log 並通知"
+      ]
+    },
+    {
+      "id": "5-2-declared-rate",
+      "group": "投資資訊",
+      "name": "宣告利率查詢",
+      "enabled": false,
+      "input": {
+        "product_type": "利率變動型年金(台幣)",
+        "product": "台灣人壽金利high利率變動型年金保險",
+        "year": 2024,
+        "month": 4
+      },
+      "acceptance": [
+        "篩選結果欄位皆有值"
+      ],
+      "exception": [
+        "無法輸入查詢數值或無法產生查詢結果時產出 log 並通知"
+      ]
+    },
+    {
+      "id": "5-3-annuity-rate",
+      "group": "投資資訊",
+      "name": "保險金年金預定利率查詢",
+      "enabled": false,
+      "input": {
+        "product": "台灣人壽金采88變額年金保險",
+        "year": 2024,
+        "month": 4
+      },
+      "acceptance": [
+        "查詢結果有值"
+      ],
+      "exception": [
+        "無法輸入查詢數值或無法產生查詢結果時產出 log 並通知"
+      ]
+    },
+    {
+      "id": "5-4-dividend-rate",
+      "group": "投資資訊",
+      "name": "分紅保單紅利儲存生息利率查詢",
+      "enabled": false,
+      "input": {
+        "product": "台灣人壽新金采年年分紅還本終生保險",
+        "year": 2024,
+        "month": 4
+      },
+      "acceptance": [
+        "第一列查詢結果有值"
+      ],
+      "exception": [
+        "無法搜尋產品或無法產生查詢結果時產出 log 並通知"
+      ]
+    },
+    {
+      "id": "5-5-investment-target-search",
+      "group": "投資資訊",
+      "name": "投資標的查詢",
+      "enabled": false,
+      "input": {
+        "fund_type": "不限",
+        "currency": "不限",
+        "issuer": "不限",
+        "risk_level": "不限",
+        "region": "不限",
+        "annualized_distribution_rate": "不限"
+      },
+      "acceptance": [
+        "固定選擇第一個標的後查詢",
+        "查詢結果每個欄位皆有值"
+      ],
+      "exception": [
+        "無法搜尋標的或無法產生查詢結果時產出 log 並通知"
+      ]
+    },
+    {
+      "id": "5-6-mortgage-index-rate",
+      "group": "投資資訊",
+      "name": "房貸指標利率查詢",
+      "enabled": false,
+      "input": {
+        "year_month": "2024-08",
+        "rate_types": [
+          "定儲指數利率",
+          "基準利率",
+          "基準放款利率"
+        ]
+      },
+      "acceptance": [
+        "三種利率頁籤篩選結果皆有值"
+      ],
+      "exception": [
+        "無法產生篩選結果時產出 log 並通知"
+      ]
+    },
+    {
+      "id": "5-7-investment-print-share-export",
+      "group": "投資資訊",
+      "name": "投資標的列印/分享/匯出",
+      "enabled": false,
+      "side_effect": true,
+      "input": {
+        "email_to": "insurtech@taiwanlife.com",
+        "subject": "官網分享測試",
+        "body": "官網分享測試"
+      },
+      "acceptance": [
+        "友善列印頁面可產生並關閉",
+        "分享視窗可送出",
+        "Excel 檔案可下載"
+      ],
+      "exception": [
+        "無法產生列印視窗、無法寄送電子郵件或無法產出 Excel 時產出 log 並通知"
+      ]
+    },
+    {
+      "id": "5-8-investment-favorite",
+      "group": "投資資訊",
+      "name": "收藏/查看投資標的",
+      "enabled": false,
+      "side_effect": true,
+      "input": {
+        "targets": [
+          "A001",
+          "A004",
+          "A005"
+        ]
+      },
+      "acceptance": [
+        "至少可收藏第一個標的",
+        "查看我的收藏可呈現已收藏標的",
+        "可反選取消收藏"
+      ],
+      "exception": [
+        "無法加入收藏或未呈現已收藏標的時產出 log 並通知"
+      ]
+    },
+    {
+      "id": "5-9-investment-portfolio-calculator",
+      "group": "投資資訊",
+      "name": "投資組合試算",
+      "enabled": false,
+      "input": {
+        "product": "台灣人壽新金采100變額年金保險",
+        "investment": "E002元大台灣卓越50(二)",
+        "ratio": "100%"
+      },
+      "acceptance": [
+        "第一列試算結果有值",
+        "兩個圓餅圖存在"
+      ],
+      "exception": [
+        "無法選擇試算數值或無法產出試算結果時產出 log 並通知"
+      ]
+    },
+    {
+      "id": "5-10-financial-news",
+      "group": "投資資訊",
+      "name": "查詢財經資訊",
+      "enabled": false,
+      "input": {
+        "date": "2024/08/26",
+        "category": "新聞全覽>頭條新聞"
+      },
+      "acceptance": [
+        "查詢第一列有值"
+      ],
+      "exception": [
+        "無法產出搜尋結果時產出 log 並通知"
+      ]
+    }
+  ]
+}

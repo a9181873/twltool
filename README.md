@@ -2,6 +2,16 @@
 
 這個資料夾已整理成可部署的巡檢專案：Python 負責實際檢查，排程可由 Windows Task Scheduler、Power Automate、n8n、Docker 或 cron 觸發。主程式在 `taiwanlife_monitor/monitor.py`，RPA84 官網功能需求也由同一套巡檢核心執行。
 
+## 巡檢管理後台
+
+不使用 LLM API。使用者可透過本機網頁管理頁面巡檢、搜尋檢查、SSL、連結檢查、自訂流程，並查看 `reports/latest.json` 與觸發試跑。
+
+```powershell
+.\scripts\run_flow_editor.ps1
+```
+
+Windows、OCI 與 Docker Compose 部署方式見 `docs/flow-editor-ui.md`。
+
 ## 監控內容
 
 - 首頁與關鍵子頁 HTTP/標題/關鍵文字檢查

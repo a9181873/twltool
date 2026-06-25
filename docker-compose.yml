@@ -34,6 +34,44 @@ services:
       - --email-on-fail
       - --fail-exit-code
 
+  flow-editor:
+    profiles:
+      - tools
+    build:
+      context: .
+    image: ${MONITOR_IMAGE:-taiwanlife-monitor:local}
+    env_file:
+      - path: .env
+        required: false
+    working_dir: /app
+    user: "${FLOW_UI_UID:-1000}:${FLOW_UI_GID:-1000}"
+    ports:
+      - "${FLOW_UI_BIND_ADDR:-127.0.0.1}:${FLOW_UI_PORT:-8787}:8787"
+    environment:
+      TZ: ${TZ:-Asia/Taipei}
+      PYTHONUNBUFFERED: "1"
+      FLOW_UI_TOKEN: ${FLOW_UI_TOKEN:-}
+    volumes:
+      - ./config:/app/config
+      - ./reports:/app/reports
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - python
+      - -m
+      - taiwanlife_monitor.flow_ui
+      - --config
+      - config/taiwanlife.json
+      - --output-dir
+      - reports
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8787"
+      - --no-browser
+
   n8n:
     image: docker.n8n.io/n8nio/n8n
     restart: unless-stopped

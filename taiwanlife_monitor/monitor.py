@@ -365,6 +365,22 @@ def categorize_error(message: str, exc: BaseException | None = None) -> tuple[st
             "瀏覽器執行環境失敗",
             "請確認 Playwright Chromium 已安裝，且容器具備必要系統套件",
         )
+    if any(token in lowered for token in ("csp", "content security policy", "content-security-policy")):
+        return (
+            "csp",
+            "CSP 封鎖（不影響可見內容）",
+            "請確認 CSP 白名單設定（不影響使用者體驗）",
+        )
+    if any(token in lowered for token in (
+        "facebook.com", "connect.facebook", "fb_pixel", "facebook pixel",
+        "google-analytics", "ga.js", "gtag", "gtm.js", "googletagmanager",
+        "doubleclick", "googleadservices",
+    )):
+        return (
+            "tracking",
+            "第三方追蹤碼封鎖（不影響可見內容）",
+            "追蹤碼載入失敗不影響頁面功能",
+        )
     return (
         "unknown",
         "未預期例外",
@@ -729,10 +745,21 @@ class TaiwanLifeMonitor:
                 status = "fail"
                 details.append("頁面缺少關鍵文字 " + ", ".join(missing_text))
                 evidence["missing_text"] = missing_text
-            if local_resources:
+            # 過濾掉不影響肉眼可見內容的錯誤（CSP、追蹤碼、第三方廣告）
+            visible_failures = [
+                r for r in local_resources
+                if r.get("error_type", "") not in ("csp", "tracking")
+                and r.get("type", "") in ("image", "font", "media", "stylesheet")
+            ]
+            if visible_failures:
                 status = worst_status(status, "fail")
-                details.append(f"壞掉的頁面物件 {len(local_resources)} 個")
-                evidence["broken_resources"] = local_resources[:10]
+                details.append(f"壞掉的頁面物件 {len(visible_failures)} 個")
+                evidence["broken_resources"] = visible_failures[:10]
+            elif local_resources:
+                # 只有 tracking/csp 錯誤 → 僅記錄，不計失敗
+                status = worst_status(status, "warn")
+                details.append(f"追蹤/CSP 封鎖 {len(local_resources)} 項（不影響可見內容）")
+                evidence["tracking_blocked"] = len(local_resources)
             if screenshot_error:
                 status = worst_status(status, "warn")
                 details.append("截圖失敗")

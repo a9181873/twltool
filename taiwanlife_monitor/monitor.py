@@ -1204,6 +1204,10 @@ class TaiwanLifeMonitor:
                     executable_path = os.environ.get(
                         "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", ""
                     ) or browser_cfg.get("executable_path", "")
+                    # ponytail: /usr/bin/chromium is a Debian desktop wrapper, not headless-capable.
+                    # Fall back to Playwright-bundled chromium when env var points to broken binary.
+                    if executable_path and executable_path == "/usr/bin/chromium":
+                        executable_path = ""
                     if executable_path:
                         launch_kwargs["executable_path"] = executable_path
                     browser = playwright.chromium.launch(**launch_kwargs)
